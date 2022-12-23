@@ -82,6 +82,5 @@ echo -n $'\004' > ./stdin
 
 ## License and Links
 
-* [Documentation](https://docs.rs/teetty/)
 * [Issue Tracker](https://github.com/mitsuhiko/teetty/issues)
 * License: [Apache-2.0](https://github.com/mitsuhiko/teetty/blob/main/LICENSE)
