@@ -1,7 +1,15 @@
 [package]
 name = "teetty"
+license = "Apache-2.0"
+authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
+description = " A bit like tee, a bit like script, but all with a fake tty. Lets you remote control and watch a process."
 version = "0.1.0"
 edition = "2021"
+keywords = ["pty", "script", "tty", "tee"]
+readme = "README.md"
+exclude = [
+    "assets/*"
+]
 
 [dependencies]
 anyhow = "1.0.68"

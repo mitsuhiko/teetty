@@ -17,6 +17,8 @@ keyboard is still attached.
 $ cargo install teetty
 ```
 
+![](https://raw.githubusercontent.com/mitsuhiko/teetty/main/assets/demo.gif)
+
 ## Example
 
 In one terminal we first we open a [FIFO](https://en.wikipedia.org/wiki/Named_pipe)
