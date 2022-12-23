@@ -38,7 +38,7 @@ We can duplex the output by watching the `stdout` file with `tail -f` in another
 window:
 
 ```bash
-$ tail -f /tmp/hello-out
+$ tail -f ./stdout
 Python 3.8.12 (default, Mar  3 2022, 14:54:16)
 [Clang 13.0.0 (clang-1300.0.29.30)] on darwin
 Type "help", "copyright", "credits" or "license" for more information.
