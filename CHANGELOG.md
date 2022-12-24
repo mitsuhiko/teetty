@@ -3,6 +3,7 @@
 - Add `--disable-pager` disable pagers.
 - Add `--script-mode` to retain stdout/stderr as separate
   streams but without raw mode on the terminal.
+- Improved `EINTR` handling.
 
 # 0.1.0
 
