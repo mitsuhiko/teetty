@@ -25,6 +25,17 @@ pub struct Cli {
     /// Disables the default output flushing after all writes.
     #[arg(short = 'F', long = "no-flush")]
     no_flush: bool,
+    /// Enables script mode.  Script mode retains the separation of stdout/stderr,
+    /// disables raw mode and pagers.  The end result is that for most tools they
+    /// still believe to be connected to a terminal, but keyboard input typically
+    /// will no longer work.  In this form teetty can be plugged in to places that
+    /// do not require interactivity but you still want an executable think it's
+    /// connected to a terminal.
+    #[arg(long)]
+    script_mode: bool,
+    /// Tries to tell a process to not use a pager like `LESS`.
+    #[arg(long)]
+    disable_pager: bool,
     /// The command and the arguments to run
     #[arg(last = true)]
     command: Vec<OsString>,
@@ -37,6 +48,8 @@ pub fn execute() -> Result<i32, Error> {
         out_path: args.out_path.as_deref(),
         truncate_out: args.truncate_out,
         no_flush: args.no_flush,
+        script_mode: args.script_mode,
+        disable_pager: args.disable_pager,
         in_path: args.in_path.as_deref(),
     })
 }

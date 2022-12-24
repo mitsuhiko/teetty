@@ -80,6 +80,15 @@ will try to end it:
 echo -n $'\004' > ./stdin
 ```
 
+## Similar Projects
+
+These are some similar projects:
+
+- [`faketty`](https://github.com/dtolnay/faketty): emulates two fake ttys to retain
+  stdout and stderr.  This is similar to `teetty` in `--script-mode`.
+- [`script`](https://man7.org/linux/man-pages/man1/script.1.html): a built-in tool into
+  most unices which can capture output of terminals.
+
 ## License and Links
 
 * [Issue Tracker](https://github.com/mitsuhiko/teetty/issues)

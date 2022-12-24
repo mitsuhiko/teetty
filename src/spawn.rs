@@ -1,3 +1,4 @@
+use std::env;
 use std::ffi::{CString, OsString};
 use std::fs::File;
 use std::io::{Read, Write};
@@ -7,7 +8,9 @@ use std::path::Path;
 
 use anyhow::Error;
 use nix::errno::Errno;
-use nix::libc::{login_tty, O_NONBLOCK, SIGWINCH, STDIN_FILENO, STDOUT_FILENO, TIOCGWINSZ, VEOF};
+use nix::libc::{
+    login_tty, O_NONBLOCK, SIGWINCH, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, TIOCGWINSZ, VEOF,
+};
 use nix::pty::{openpty, Winsize};
 use nix::sys::select::{select, FdSet};
 use nix::sys::signal::{killpg, Signal};
@@ -15,7 +18,9 @@ use nix::sys::stat::Mode;
 use nix::sys::termios::{cfmakeraw, tcgetattr, tcsetattr, LocalFlags, SetArg, Termios};
 use nix::sys::time::TimeVal;
 use nix::sys::wait::{waitpid, WaitStatus};
-use nix::unistd::{close, execvp, fork, mkfifo, read, tcgetpgrp, write, ForkResult, Pid};
+use nix::unistd::{
+    close, dup2, execvp, fork, mkfifo, pipe, read, tcgetpgrp, write, ForkResult, Pid,
+};
 use signal_hook::iterator::Signals;
 
 macro_rules! continue_on_eintr {
@@ -33,6 +38,8 @@ pub struct SpawnOptions<'a> {
     pub out_path: Option<&'a Path>,
     pub truncate_out: bool,
     pub no_flush: bool,
+    pub script_mode: bool,
+    pub disable_pager: bool,
     pub in_path: Option<&'a Path>,
 }
 
@@ -55,13 +62,22 @@ pub fn spawn(opts: &SpawnOptions) -> Result<i32, Error> {
     // This switches the terminal to raw mode and restores it on Drop.  Unfortunately
     // due to all our shenanigans here we have no real guarantee that `Drop` is called
     // so there will be cases where the term is left in raw state and requires a reset :(
-    let _restore_term = term_attrs.as_ref().map(|term_attrs| {
-        let mut raw_attrs = term_attrs.clone();
-        cfmakeraw(&mut raw_attrs);
-        raw_attrs.local_flags.remove(LocalFlags::ECHO);
-        tcsetattr(STDIN_FILENO, SetArg::TCSAFLUSH, &raw_attrs).ok();
-        RestoreTerm(term_attrs.clone())
-    });
+    let (_restore_term, stderr_parent, stderr_child) = if opts.script_mode {
+        let (r, w) = pipe()?;
+        (None, Some(r), Some(w))
+    } else {
+        (
+            term_attrs.as_ref().map(|term_attrs| {
+                let mut raw_attrs = term_attrs.clone();
+                cfmakeraw(&mut raw_attrs);
+                raw_attrs.local_flags.remove(LocalFlags::ECHO);
+                tcsetattr(STDIN_FILENO, SetArg::TCSAFLUSH, &raw_attrs).ok();
+                RestoreTerm(term_attrs.clone())
+            }),
+            None,
+            None,
+        )
+    };
 
     // crate a fifo if stdin is pointed to a non existing file
     if let Some(ref path) = opts.in_path {
@@ -101,8 +117,14 @@ pub fn spawn(opts: &SpawnOptions) -> Result<i32, Error> {
             term_attrs.is_some(),
             out_file.as_mut(),
             in_file.as_mut(),
+            stderr_parent,
             !opts.no_flush,
         )?);
+    }
+
+    // set the pagers to `cat` if it's disabled.
+    if opts.disable_pager || opts.script_mode {
+        env::set_var("PAGER", "cat");
     }
 
     // If we reach this point we're the child and we want to turn into the
@@ -116,6 +138,9 @@ pub fn spawn(opts: &SpawnOptions) -> Result<i32, Error> {
     close(pty.master)?;
     unsafe {
         login_tty(pty.slave);
+        if let Some(fd) = stderr_child {
+            dup2(fd, STDERR_FILENO)?;
+        }
     }
     execvp(&args[0], &args)?;
     unreachable!();
@@ -144,6 +169,7 @@ fn communication_loop(
     is_tty: bool,
     mut out_file: Option<&mut File>,
     mut in_file: Option<&mut File>,
+    stderr: Option<i32>,
     flush: bool,
 ) -> Result<i32, Error> {
     let mut buf = [0; 4096];
@@ -161,6 +187,9 @@ fn communication_loop(
         }
         if let Some(ref f) = in_file {
             read_fds.insert(f.as_raw_fd());
+        }
+        if let Some(fd) = stderr {
+            read_fds.insert(fd);
         }
         let n = continue_on_eintr!(select(
             None,
@@ -199,16 +228,16 @@ fn communication_loop(
         if read_fds.contains(master) {
             match continue_on_eintr!(read(master, &mut buf)) {
                 0 => break,
-                n => {
-                    if let Some(ref mut logfile) = out_file {
-                        logfile.write_all(&buf[..n])?;
-                        if flush {
-                            logfile.flush()?;
-                        }
-                    }
-                    write(STDOUT_FILENO, &buf[..n])?;
-                }
+                n => forward_and_log(STDOUT_FILENO, &mut out_file, &buf, n, flush)?,
             };
+        }
+        if let Some(fd) = stderr {
+            if read_fds.contains(fd) {
+                let n = continue_on_eintr!(read(fd, &mut buf));
+                if n > 0 {
+                    forward_and_log(STDERR_FILENO, &mut out_file, &buf, n, flush)?;
+                };
+            }
         }
     }
 
@@ -219,6 +248,23 @@ fn communication_loop(
     };
     close(master)?;
     Ok(code)
+}
+
+fn forward_and_log(
+    fd: i32,
+    out_file: &mut Option<&mut File>,
+    buf: &[u8],
+    n: usize,
+    flush: bool,
+) -> Result<(), Error> {
+    if let Some(logfile) = out_file {
+        logfile.write_all(&buf[..n])?;
+        if flush {
+            logfile.flush()?;
+        }
+    }
+    write(fd, &buf[..n])?;
+    Ok(())
 }
 
 /// If possible, returns the terminal size of the given fd.
