@@ -23,16 +23,6 @@ use nix::unistd::{
 };
 use signal_hook::iterator::Signals;
 
-macro_rules! continue_on_eintr {
-    ($expr:expr) => {
-        match $expr {
-            Ok(rv) => rv,
-            Err(Errno::EINTR | Errno::EAGAIN) => continue,
-            Err(err) => return Err(err.into()),
-        }
-    };
-}
-
 pub struct SpawnOptions<'a> {
     pub args: &'a [OsString],
     pub out_path: Option<&'a Path>,
@@ -174,8 +164,9 @@ fn communication_loop(
 ) -> Result<i32, Error> {
     let mut buf = [0; 4096];
     let mut read_stdin = true;
+    let mut done = false;
 
-    loop {
+    while !done {
         let mut read_fds = FdSet::new();
         let mut timeout = TimeVal::new(1, 0);
         read_fds.insert(master);
@@ -191,52 +182,55 @@ fn communication_loop(
         if let Some(fd) = stderr {
             read_fds.insert(fd);
         }
-        let n = continue_on_eintr!(select(
-            None,
-            Some(&mut read_fds),
-            None,
-            None,
-            Some(&mut timeout)
-        ));
-        if n == 0 {
-            continue;
+        match select(None, Some(&mut read_fds), None, None, Some(&mut timeout)) {
+            Ok(0) | Err(Errno::EINTR | Errno::EAGAIN) => continue,
+            Ok(_) => {}
+            Err(err) => return Err(err.into()),
         }
 
         if read_fds.contains(STDIN_FILENO) {
-            match continue_on_eintr!(read(STDIN_FILENO, &mut buf)) {
-                0 => {
+            match read(STDIN_FILENO, &mut buf) {
+                Ok(0) => {
                     if let Ok(attrs) = tcgetattr(master) {
                         if attrs.local_flags.contains(LocalFlags::ICANON) {
-                            write(master, &[attrs.control_chars[VEOF]])?;
+                            write_all(master, &[attrs.control_chars[VEOF]])?;
                         }
                     }
                     read_stdin = false;
                 }
-                n => {
-                    write(master, &buf[..n])?;
+                Ok(n) => {
+                    write_all(master, &buf[..n])?;
                 }
+                Err(Errno::EINTR | Errno::EAGAIN) => {}
+                Err(err) => return Err(err.into()),
             };
         }
         if let Some(ref mut f) = in_file {
             if read_fds.contains(f.as_raw_fd()) {
                 let n = f.read(&mut buf)?;
                 if n > 0 {
-                    write(master, &buf[..n])?;
+                    write_all(master, &buf[..n])?;
                 };
             }
         }
         if read_fds.contains(master) {
-            match continue_on_eintr!(read(master, &mut buf)) {
-                0 => break,
-                n => forward_and_log(STDOUT_FILENO, &mut out_file, &buf, n, flush)?,
+            match read(master, &mut buf) {
+                Ok(0) => {
+                    done = true;
+                }
+                Ok(n) => forward_and_log(STDOUT_FILENO, &mut out_file, &buf, n, flush)?,
+                Err(Errno::EAGAIN | Errno::EINTR) => {}
+                Err(err) => return Err(err.into()),
             };
         }
         if let Some(fd) = stderr {
             if read_fds.contains(fd) {
-                let n = continue_on_eintr!(read(fd, &mut buf));
-                if n > 0 {
-                    forward_and_log(STDERR_FILENO, &mut out_file, &buf, n, flush)?;
-                };
+                match read(fd, &mut buf) {
+                    Ok(0) | Err(_) => {}
+                    Ok(n) => {
+                        forward_and_log(STDERR_FILENO, &mut out_file, &buf, n, flush)?;
+                    }
+                }
             }
         }
     }
@@ -263,7 +257,7 @@ fn forward_and_log(
             logfile.flush()?;
         }
     }
-    write(fd, &buf[..n])?;
+    write_all(fd, &buf[..n])?;
     Ok(())
 }
 
@@ -288,6 +282,14 @@ fn mkfifo_atomic(path: &Path) -> Result<(), Errno> {
         Ok(()) | Err(Errno::EEXIST) => Ok(()),
         Err(err) => Err(err),
     }
+}
+
+fn write_all(fd: i32, mut buf: &[u8]) -> Result<(), Errno> {
+    while !buf.is_empty() {
+        let n = write(fd, buf)?;
+        buf = &buf[n..];
+    }
+    Ok(())
 }
 
 struct RestoreTerm(Termios);
