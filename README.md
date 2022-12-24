@@ -21,12 +21,11 @@ $ cargo install teetty
 
 ## Example
 
-In one terminal we first we open a [FIFO](https://en.wikipedia.org/wiki/Named_pipe)
-named `stdin` into which we can write input, then we tell `teetty` to connect to
-it, and write the output into a `stdout` and spawn a python process.
+In one terminal we tell `teetty` to create and connect to a new
+[FIFO](https://en.wikipedia.org/wiki/Named_pipe) named `stdin`, write the output
+into a file named `stdout` and spawn a python process.
 
 ```bash
-$ mkfifo ./stdin
 $ teetty --in ./stdin --out ./stdout -- python
 Python 3.8.12 (default, Mar  3 2022, 14:54:16)
 [Clang 13.0.0 (clang-1300.0.29.30)] on darwin
@@ -60,6 +59,20 @@ $ echo 'print(sys.version_info)' > ./stdin
 sys.version_info(major=3, minor=8, micro=12, releaselevel='final', serial=0)
 ```
 
+## Script Mode
+
+By default `teetty` opens a pty and connects it to the application.  Due to how
+pseudo terminals work stdout and stderr will be merged together.  In this mode
+the terminal will be placed in raw mode which means that applications like Vim
+that want to move cursors around will function correctly.
+
+`teetty` provides a second mode called "script mode" that can be enabled with
+`--script-mode`.  In that mode stdout and stderr stay separated.  This is
+accomplished by leaving stdout connected to the pseudo terminal and by
+connecting stderr to an internal pipe.  Because this is a setup that execuables
+are not familiar with it causes all kinds of visual artifacts when raw mode is
+enabled.  As a result in this mode pagers and raw mode is disabled.
+
 ## FIFOs, Flushing and Control Characters
 
 It's generally assumped that the `--in` path is a FIFO but it's possible for this
@@ -80,14 +93,20 @@ will try to end it:
 echo -n $'\004' > ./stdin
 ```
 
-## Similar Projects
+## Related Projects
 
-These are some similar projects:
+These are some related projects:
 
 - [`faketty`](https://github.com/dtolnay/faketty): emulates two fake ttys to retain
   stdout and stderr.  This is similar to `teetty` in `--script-mode`.
 - [`script`](https://man7.org/linux/man-pages/man1/script.1.html): a built-in tool into
   most unices which can capture output of terminals.
+- [`tmux`](https://github.com/tmux/tmux): emulates an entire terminal including
+  drawing surface and more. Lets you detach and reattach to multiple terminal
+  sessions.
+- [`expect`](https://linux.die.net/man/1/expect): lets you script interactive command
+  line utilities. Variations of this tool exist for programming languages like
+  [`pexpect`](https://pypi.org/project/pexpect) for Python.
 
 ## License and Links
 
