@@ -31,10 +31,10 @@ pub struct Cli {
     /// will no longer work.  In this form teetty can be plugged in to places that
     /// do not require interactivity but you still want an executable think it's
     /// connected to a terminal.
-    #[arg(long)]
+    #[arg(short = 's', long)]
     script_mode: bool,
     /// Tries to tell a process to not use a pager like `LESS`.
-    #[arg(long)]
+    #[arg(long, short = 'P')]
     disable_pager: bool,
     /// The command and the arguments to run
     #[arg(last = true)]
