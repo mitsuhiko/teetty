@@ -96,11 +96,16 @@ pub fn spawn(opts: &SpawnOptions) -> Result<i32, Error> {
         }
         let mut out_file = match opts.out_path {
             Some(p) => Some(
-                File::options()
-                    .append(true)
-                    .create(true)
-                    .truncate(opts.truncate_out)
-                    .open(p)?,
+                if !opts.truncate_out {
+                    File::options().append(true).create(true).open(p)
+                } else {
+                    File::options()
+                        .create(true)
+                        .truncate(true)
+                        .write(true)
+                        .open(p)
+                }
+                .unwrap(),
             ),
             None => None,
         };

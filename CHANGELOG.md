@@ -1,3 +1,7 @@
+# 0.2.1
+
+- Fixed incorrect truncation behavior.
+
 # 0.2.0
 
 - Add `--disable-pager` disable pagers.
