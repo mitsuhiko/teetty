@@ -16,3 +16,7 @@ anyhow = "1.0.68"
 clap = { version = "4.0.30", default-features = false, features = ["derive", "std", "help", "usage", "wrap_help"] }
 nix = { version = "0.26.1", default-features = false, features = ["fs", "process", "term", "ioctl", "signal", "poll"] }
 signal-hook = "0.3.14"
+
+[dev-dependencies]
+insta = "1.23.0"
+tempfile = "3.3.0"

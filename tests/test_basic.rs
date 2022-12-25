@@ -1,6 +1,8 @@
 use std::fs::{self, File};
 use std::process::{Command, ExitStatus};
 
+use tempfile::TempDir;
+
 struct Output {
     stdout: String,
     stderr: String,
@@ -8,8 +10,7 @@ struct Output {
     status: ExitStatus,
 }
 
-fn run_teetty(args: &[&str]) -> (Output, insta::internals::SettingsBindDropGuard) {
-    let tempdir = tempfile::tempdir().unwrap();
+fn run_teetty(tempdir: &TempDir, args: &[&str]) -> Output {
     let stdout = tempdir.path().join("stdout");
     let stderr = tempdir.path().join("stderr");
     let out = tempdir.path().join("out");
@@ -23,22 +24,18 @@ fn run_teetty(args: &[&str]) -> (Output, insta::internals::SettingsBindDropGuard
         .stderr(File::create(&stderr).unwrap())
         .status()
         .unwrap();
-    let mut settings = insta::Settings::clone_current();
-    settings.set_description("foobar");
-    (
-        Output {
-            stdout: fs::read_to_string(&stdout).unwrap(),
-            stderr: fs::read_to_string(&stdout).unwrap(),
-            out: fs::read_to_string(&out).unwrap(),
-            status,
-        },
-        settings.bind_to_scope(),
-    )
+    Output {
+        stdout: fs::read_to_string(&stdout).unwrap(),
+        stderr: fs::read_to_string(&stdout).unwrap(),
+        out: fs::read_to_string(&out).unwrap(),
+        status,
+    }
 }
 
 #[test]
 fn test_basic() {
-    let (out, _drop) = run_teetty(&[]);
+    let tempdir = tempfile::tempdir().unwrap();
+    let out = run_teetty(&tempdir, &[]);
     assert_eq!(out.status.code(), Some(42));
 
     insta::assert_snapshot!(&out.stdout, @r###"
