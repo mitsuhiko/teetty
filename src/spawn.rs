@@ -191,11 +191,7 @@ fn communication_loop(
         if read_fds.contains(STDIN_FILENO) {
             match read(STDIN_FILENO, &mut buf) {
                 Ok(0) => {
-                    if let Ok(attrs) = tcgetattr(master) {
-                        if attrs.local_flags.contains(LocalFlags::ICANON) {
-                            write_all(master, &[attrs.control_chars[VEOF]])?;
-                        }
-                    }
+                    send_eof_sequence(master);
                     read_stdin = false;
                 }
                 Ok(n) => {
@@ -281,6 +277,14 @@ fn mkfifo_atomic(path: &Path) -> Result<(), Errno> {
     match mkfifo(path, Mode::S_IRUSR | Mode::S_IWUSR) {
         Ok(()) | Err(Errno::EEXIST) => Ok(()),
         Err(err) => Err(err),
+    }
+}
+
+fn send_eof_sequence(fd: i32) {
+    if let Ok(attrs) = tcgetattr(fd) {
+        if attrs.local_flags.contains(LocalFlags::ICANON) {
+            write(fd, &[attrs.control_chars[VEOF]]).ok();
+        }
     }
 }
 
