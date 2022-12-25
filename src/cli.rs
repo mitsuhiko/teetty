@@ -36,6 +36,11 @@ pub struct Cli {
     /// Tries to tell a process to not use a pager like `LESS`.
     #[arg(long, short = 'P')]
     disable_pager: bool,
+    /// Disables raw terminal mode.  Depending on the application being proxied
+    /// you might want to enable this.  In script mode, raw mode is automatically
+    /// disabled.
+    #[arg(short = 'R', long)]
+    disable_raw: bool,
     /// The command and the arguments to run
     #[arg(last = true)]
     command: Vec<OsString>,
@@ -50,6 +55,7 @@ pub fn execute() -> Result<i32, Error> {
         no_flush: args.no_flush,
         script_mode: args.script_mode,
         disable_pager: args.disable_pager,
+        disable_raw: args.disable_raw,
         in_path: args.in_path.as_deref(),
     })
 }

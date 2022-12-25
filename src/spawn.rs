@@ -29,6 +29,7 @@ pub struct SpawnOptions<'a> {
     pub no_flush: bool,
     pub script_mode: bool,
     pub disable_pager: bool,
+    pub disable_raw: bool,
     pub in_path: Option<&'a Path>,
 }
 
@@ -54,7 +55,7 @@ pub fn spawn(opts: &SpawnOptions) -> Result<i32, Error> {
     let (_restore_term, stderr_parent, stderr_child) = if opts.script_mode {
         let (r, w) = pipe()?;
         (None, Some(r), Some(w))
-    } else {
+    } else if !opts.disable_raw {
         (
             term_attrs.as_ref().map(|term_attrs| {
                 let mut raw_attrs = term_attrs.clone();
@@ -66,6 +67,8 @@ pub fn spawn(opts: &SpawnOptions) -> Result<i32, Error> {
             None,
             None,
         )
+    } else {
+        (None, None, None)
     };
 
     // crate a fifo if stdin is pointed to a non existing file
