@@ -73,6 +73,10 @@ connecting stderr to an internal pipe.  Because this is a setup that execuables
 are not familiar with it causes all kinds of visual artifacts when raw mode is
 enabled.  As a result in this mode pagers and raw mode is disabled.
 
+**Note on stream synchronization:** unfortunately stdout/stderr currently are not
+propertly synchronized in script mode.  See [#6](https://github.com/mitsuhiko/teetty/issues/6)
+for more information.
+
 ## FIFOs, Flushing and Control Characters
 
 It's generally assumped that the `--in` path is a FIFO but it's possible for this
