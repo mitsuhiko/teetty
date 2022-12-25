@@ -9,7 +9,7 @@ use crate::spawn::{spawn, SpawnOptions};
 /// teetty is a wrapper binary to execute a command in a pty with remote control
 /// facilities.
 #[derive(Debug, Parser)]
-#[command(version, about, arg_required_else_help = true, max_term_width = 92)]
+#[command(about, arg_required_else_help = true, max_term_width = 92)]
 pub struct Cli {
     /// A path to a FIFO or file.  When provided it's contents are monitored and
     /// sent to the terminal as input.
@@ -44,10 +44,18 @@ pub struct Cli {
     /// The command and the arguments to run
     #[arg(last = true)]
     command: Vec<OsString>,
+    /// Prints version info
+    #[arg(long)]
+    version: bool,
 }
 
 pub fn execute() -> Result<i32, Error> {
     let args = Cli::parse();
+    if args.version {
+        eprintln!("teetty {}", env!("CARGO_PKG_VERSION"));
+        return Ok(0);
+    }
+
     spawn(&SpawnOptions {
         args: &args.command[..],
         out_path: args.out_path.as_deref(),
