@@ -1,7 +1,7 @@
 use std::env;
 use std::ffi::{CString, OsString};
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::os::fd::AsRawFd;
 use std::os::unix::prelude::{OpenOptionsExt, OsStrExt};
 use std::path::Path;
@@ -203,10 +203,16 @@ fn communication_loop(
         }
         if let Some(ref mut f) = in_file {
             if read_fds.contains(f.as_raw_fd()) {
-                let n = f.read(&mut buf)?;
-                if n > 0 {
-                    write_all(master, &buf[..n])?;
-                };
+                // use read() here so that we can handle EAGAIN/EINTR
+                // without this we might recieve resource temporary unavailable
+                // see https://github.com/mitsuhiko/teetty/issues/3
+                match read(f.as_raw_fd(), &mut buf) {
+                    Ok(0) | Err(Errno::EAGAIN | Errno::EINTR) => {}
+                    Err(err) => return Err(err.into()),
+                    Ok(n) => {
+                        write_all(master, &buf[..n])?;
+                    }
+                }
             }
         }
         if read_fds.contains(master) {
