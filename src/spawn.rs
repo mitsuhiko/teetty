@@ -17,9 +17,7 @@ use nix::sys::stat::Mode;
 use nix::sys::termios::{cfmakeraw, tcgetattr, tcsetattr, LocalFlags, SetArg, Termios};
 use nix::sys::time::TimeVal;
 use nix::sys::wait::{waitpid, WaitStatus};
-use nix::unistd::{
-    close, dup2, execvp, fork, mkfifo, pipe, read, tcgetpgrp, write, ForkResult, Pid,
-};
+use nix::unistd::{close, dup2, execvp, fork, mkfifo, read, tcgetpgrp, write, ForkResult, Pid};
 use signal_hook::iterator::Signals;
 
 pub struct SpawnOptions<'a> {
@@ -49,12 +47,20 @@ pub fn spawn(opts: &SpawnOptions) -> Result<i32, Error> {
     // Create the outer pty for stdout
     let pty = openpty(&winsize, &term_attrs)?;
 
-    // This switches the terminal to raw mode and restores it on Drop.  Unfortunately
-    // due to all our shenanigans here we have no real guarantee that `Drop` is called
-    // so there will be cases where the term is left in raw state and requires a reset :(
-    let (_restore_term, stderr_parent, stderr_child) = if opts.script_mode {
-        let (r, w) = pipe()?;
-        (None, Some(r), Some(w))
+    // In script mode we set up a secondary pty.  One could also use `pipe()`
+    // here but in that case the `isatty()` call on stderr would report that
+    // it's not connected to a tty which is what we want to prevent.
+    let (_restore_term, stderr_pty) = if opts.script_mode {
+        let term_attrs = tcgetattr(STDERR_FILENO).ok();
+        let winsize = term_attrs.as_ref().and_then(|_| get_winsize(STDERR_FILENO));
+        let stderr_pty = openpty(&winsize, &term_attrs)?;
+        (None, Some(stderr_pty))
+
+    // If we are not disabling raw, we change to raw mode.  This switches the
+    // terminal to raw mode and restores it on Drop.  Unfortunately due to all
+    // our shenanigans here we have no real guarantee that `Drop` is called so
+    // there will be cases where the term is left in raw state and requires a
+    // reset :(
     } else if !opts.disable_raw {
         (
             term_attrs.as_ref().map(|term_attrs| {
@@ -65,10 +71,11 @@ pub fn spawn(opts: &SpawnOptions) -> Result<i32, Error> {
                 RestoreTerm(term_attrs.clone())
             }),
             None,
-            None,
         )
+
+    // at this point we're neither in scrop mode, nor is raw enabled. do nothing
     } else {
-        (None, None, None)
+        (None, None)
     };
 
     // crate a fifo if stdin is pointed to a non existing file
@@ -81,8 +88,11 @@ pub fn spawn(opts: &SpawnOptions) -> Result<i32, Error> {
     // both.
     if let ForkResult::Parent { child } = unsafe { fork()? } {
         close(pty.slave)?;
+        if let Some(ref stderr_pty) = stderr_pty {
+            close(stderr_pty.slave)?;
+        }
         if term_attrs.is_some() {
-            sigwinch_passthrough(pty.master)?;
+            sigwinch_passthrough(pty.master, stderr_pty.as_ref().map(|x| x.slave))?;
         }
         let mut out_file = match opts.out_path {
             Some(p) => Some(
@@ -109,7 +119,7 @@ pub fn spawn(opts: &SpawnOptions) -> Result<i32, Error> {
             term_attrs.is_some(),
             out_file.as_mut(),
             in_file.as_mut(),
-            stderr_parent,
+            stderr_pty.as_ref().map(|x| x.master),
             !opts.no_flush,
         )?);
     }
@@ -128,10 +138,13 @@ pub fn spawn(opts: &SpawnOptions) -> Result<i32, Error> {
         .filter_map(|x| CString::new(x.as_os_str().as_bytes()).ok())
         .collect::<Vec<_>>();
     close(pty.master)?;
+    if let Some(ref stderr_pty) = stderr_pty {
+        close(stderr_pty.master)?;
+    }
     unsafe {
         login_tty(pty.slave);
-        if let Some(fd) = stderr_child {
-            dup2(fd, STDERR_FILENO)?;
+        if let Some(ref stderr_pty) = stderr_pty {
+            dup2(stderr_pty.slave, STDERR_FILENO)?;
         }
     }
     execvp(&args[0], &args)?;
@@ -139,13 +152,16 @@ pub fn spawn(opts: &SpawnOptions) -> Result<i32, Error> {
 }
 
 /// Listens to a SIGWINCH signal in a background thread and forwards it to the pty.
-fn sigwinch_passthrough(master: i32) -> Result<(), Errno> {
+fn sigwinch_passthrough(master: i32, stderr_master: Option<i32>) -> Result<(), Errno> {
     // this does not seem to work properly with vim at least.  It's probably that the
     // killpg is going to the wrong process?
     std::thread::spawn(move || {
         for _ in &mut Signals::new(&[SIGWINCH]).unwrap() {
             if let Some(winsize) = get_winsize(STDIN_FILENO) {
                 set_winsize(master, winsize).ok();
+                if let Some(second_master) = stderr_master {
+                    set_winsize(second_master, winsize).ok();
+                }
                 if let Ok(pgrp) = tcgetpgrp(master) {
                     killpg(pgrp, Signal::SIGWINCH).ok();
                 }
