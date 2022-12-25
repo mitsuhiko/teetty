@@ -2,8 +2,7 @@ use std::env;
 use std::ffi::{CString, OsString};
 use std::fs::File;
 use std::io::Write;
-use std::os::fd::AsRawFd;
-use std::os::unix::prelude::{OpenOptionsExt, OsStrExt};
+use std::os::unix::prelude::{AsRawFd, OpenOptionsExt, OsStrExt};
 use std::path::Path;
 
 use anyhow::Error;
