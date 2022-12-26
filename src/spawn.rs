@@ -245,7 +245,7 @@ fn communication_loop(
                 Ok(0) => {
                     done = true;
                 }
-                Ok(n) => forward_and_log(STDOUT_FILENO, &mut out_file, &buf, n, flush)?,
+                Ok(n) => forward_and_log(STDOUT_FILENO, &mut out_file, &buf[..n], flush)?,
                 Err(Errno::EAGAIN | Errno::EINTR) => {}
                 Err(err) => return Err(err.into()),
             };
@@ -255,7 +255,7 @@ fn communication_loop(
                 match read(fd, &mut buf) {
                     Ok(0) | Err(_) => {}
                     Ok(n) => {
-                        forward_and_log(STDERR_FILENO, &mut out_file, &buf, n, flush)?;
+                        forward_and_log(STDERR_FILENO, &mut out_file, &buf[..n], flush)?;
                     }
                 }
             }
@@ -275,16 +275,15 @@ fn forward_and_log(
     fd: i32,
     out_file: &mut Option<&mut File>,
     buf: &[u8],
-    n: usize,
     flush: bool,
 ) -> Result<(), Error> {
     if let Some(logfile) = out_file {
-        logfile.write_all(&buf[..n])?;
+        logfile.write_all(buf)?;
         if flush {
             logfile.flush()?;
         }
     }
-    write_all(fd, &buf[..n])?;
+    write_all(fd, buf)?;
     Ok(())
 }
 
