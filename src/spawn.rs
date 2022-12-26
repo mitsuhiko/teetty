@@ -152,8 +152,10 @@ pub fn spawn(opts: &SpawnOptions) -> Result<i32, Error> {
             dup2(stderr_pty.slave, STDERR_FILENO)?;
         }
     }
-    execvp(&args[0], &args)?;
-    unreachable!();
+
+    // Since this returns Infallible rather than ! due to limitations, we need
+    // this dummy match.
+    match execvp(&args[0], &args)? {}
 }
 
 /// Listens to a SIGWINCH signal in a background thread and forwards it to the pty.
