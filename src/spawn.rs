@@ -309,6 +309,7 @@ fn mkfifo_atomic(path: &Path) -> Result<(), Errno> {
     }
 }
 
+/// Sends an EOF signal to the terminal if it's in canonical mode.
 fn send_eof_sequence(fd: i32) {
     if let Ok(attrs) = tcgetattr(fd) {
         if attrs.local_flags.contains(LocalFlags::ICANON) {
@@ -317,8 +318,10 @@ fn send_eof_sequence(fd: i32) {
     }
 }
 
+/// Calls write in a loop until it's done.
 fn write_all(fd: i32, mut buf: &[u8]) -> Result<(), Errno> {
     while !buf.is_empty() {
+        // we generally assume that EINTR/EAGAIN can't happen on write()
         let n = write(fd, buf)?;
         buf = &buf[n..];
     }
