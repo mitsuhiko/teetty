@@ -1,5 +1,5 @@
 use std::fs::{self, File};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 #[test]
 fn test_basic() {
@@ -118,4 +118,18 @@ fn test_script_mode() {
 
     // sadly stderr and stdout are not synched properly so we can't safely
     // assert that the file looks good (yet?)
+}
+
+#[test]
+fn test_pager() {
+    let output = Command::new(env!("CARGO_BIN_EXE_teetty"))
+        .arg("--disable-pager")
+        .arg("--")
+        .arg("bash")
+        .arg("-c")
+        .arg("echo $PAGER")
+        .stdout(Stdio::piped())
+        .output()
+        .unwrap();
+    assert_eq!(&output.stdout, b"cat\n");
 }
