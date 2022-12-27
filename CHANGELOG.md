@@ -1,3 +1,9 @@
+# 0.2.3
+
+- Restore `OPOST` for all modes but script mode.   Remove
+  `--output-processing` flag.  This behavior is too buggy in raw
+  terminal mode and breaks newline rendering in some cases.
+
 # 0.2.2
 
 - Fix incorrect handling of input stream closing.

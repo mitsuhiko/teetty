@@ -41,9 +41,6 @@ pub struct Cli {
     /// disabled.
     #[arg(short = 'R', long)]
     disable_raw: bool,
-    /// Enables implementation defined output processing (OPOST)
-    #[arg(long)]
-    output_processing: bool,
     /// The command and the arguments to run
     #[arg(last = true)]
     command: Vec<OsString>,
@@ -67,7 +64,6 @@ pub fn execute() -> Result<i32, Error> {
         script_mode: args.script_mode,
         disable_pager: args.disable_pager,
         disable_raw: args.disable_raw,
-        output_processing: args.output_processing,
         in_path: args.in_path.as_deref(),
     })
 }

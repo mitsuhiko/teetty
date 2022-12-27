@@ -31,7 +31,6 @@ pub struct SpawnOptions<'a> {
     pub script_mode: bool,
     pub disable_pager: bool,
     pub disable_raw: bool,
-    pub output_processing: bool,
     pub in_path: Option<&'a Path>,
 }
 
@@ -89,12 +88,12 @@ pub fn spawn(opts: &SpawnOptions) -> Result<i32, Error> {
 
     // set some flags after pty has been created.  We always want to remove the
     // ECHO flag here so we don't see ^D and similar things in out output.
-    // Likewise for most uses we want to remove OPOST which will otherwise
+    // Likewise in script mode we want to remove OPOST which will otherwise
     // convert LF to CRLF.
     if let Ok(mut term_attrs) = tcgetattr(pty.master) {
-        term_attrs
-            .output_flags
-            .set(OutputFlags::OPOST, opts.output_processing);
+        if opts.script_mode {
+            term_attrs.output_flags.remove(OutputFlags::OPOST);
+        }
         term_attrs.local_flags.remove(LocalFlags::ECHO);
         tcsetattr(pty.master, SetArg::TCSAFLUSH, &term_attrs).ok();
     }

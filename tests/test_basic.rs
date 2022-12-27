@@ -131,5 +131,5 @@ fn test_pager() {
         .stdout(Stdio::piped())
         .output()
         .unwrap();
-    assert_eq!(&output.stdout, b"cat\n");
+    assert_eq!(&output.stdout, b"cat\r\n");
 }
