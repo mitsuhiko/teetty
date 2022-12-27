@@ -11,7 +11,7 @@ doc:
 
 .PHONY: all
 test:
-	@cargo test < /dev/null
+	@cargo test -- --test-threads=1 < /dev/null
 
 .PHONY: format
 format:
