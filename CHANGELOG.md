@@ -3,6 +3,7 @@
 - Fix incorrect handling of input stream closing.
 - Ensure `ECHO` mode is consistently disabled.
 - Turn off `OPOST` by default.
+- Added `--output-processing` to enable `OPOST`.
 
 # 0.2.1
 
