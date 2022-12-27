@@ -15,7 +15,9 @@ use nix::pty::{openpty, Winsize};
 use nix::sys::select::{select, FdSet};
 use nix::sys::signal::{killpg, Signal};
 use nix::sys::stat::Mode;
-use nix::sys::termios::{cfmakeraw, tcgetattr, tcsetattr, LocalFlags, SetArg, Termios};
+use nix::sys::termios::{
+    cfmakeraw, tcgetattr, tcsetattr, LocalFlags, OutputFlags, SetArg, Termios,
+};
 use nix::sys::time::TimeVal;
 use nix::sys::wait::{waitpid, WaitStatus};
 use nix::unistd::{close, dup2, execvp, fork, mkfifo, read, tcgetpgrp, write, ForkResult, Pid};
@@ -29,6 +31,7 @@ pub struct SpawnOptions<'a> {
     pub script_mode: bool,
     pub disable_pager: bool,
     pub disable_raw: bool,
+    pub output_processing: bool,
     pub in_path: Option<&'a Path>,
 }
 
@@ -67,7 +70,6 @@ pub fn spawn(opts: &SpawnOptions) -> Result<i32, Error> {
             term_attrs.as_ref().map(|term_attrs| {
                 let mut raw_attrs = term_attrs.clone();
                 cfmakeraw(&mut raw_attrs);
-                raw_attrs.local_flags.remove(LocalFlags::ECHO);
                 tcsetattr(STDIN_FILENO, SetArg::TCSAFLUSH, &raw_attrs).ok();
                 RestoreTerm(term_attrs.clone())
             }),
@@ -82,6 +84,16 @@ pub fn spawn(opts: &SpawnOptions) -> Result<i32, Error> {
     // crate a fifo if stdin is pointed to a non existing file
     if let Some(ref path) = opts.in_path {
         mkfifo_atomic(&path)?;
+    }
+
+    // set some flags after pty has been created.  We always want to remove the
+    // ECHO flag here as it sometimes does not get set originally.
+    if let Ok(mut term_attrs) = tcgetattr(pty.master) {
+        term_attrs
+            .output_flags
+            .set(OutputFlags::OPOST, opts.output_processing);
+        term_attrs.local_flags.remove(LocalFlags::ECHO);
+        tcsetattr(pty.master, SetArg::TCSAFLUSH, &term_attrs).ok();
     }
 
     // Fork and establish the communication loop in the parent.  This unfortunately
@@ -217,11 +229,7 @@ fn communication_loop(
         if read_fds.contains(STDIN_FILENO) {
             match read(STDIN_FILENO, &mut buf) {
                 Ok(0) => {
-                    // if we're not actually connected to a terminal then sending a
-                    // control sequence on macOS can mess stuff up.
-                    if is_tty {
-                        send_eof_sequence(master);
-                    }
+                    send_eof_sequence(master);
                     read_stdin = false;
                 }
                 Ok(n) => {

@@ -1,3 +1,9 @@
+# 0.2.2
+
+- Fix incorrect handling of input stream closing.
+- Ensure `ECHO` mode is consistently disabled.
+- Turn off `OPOST` by default.
+
 # 0.2.1
 
 - Fixed incorrect truncation behavior.
