@@ -2,6 +2,7 @@
 
 - Fixed incorrect truncation behavior.
 - Correctly handle `EIO` on linux.
+- Make EOF not appear if the process does not send to stderr.
 
 # 0.2.0
 

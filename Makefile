@@ -11,7 +11,7 @@ doc:
 
 .PHONY: all
 test:
-	@cargo test
+	@cargo test < /dev/null
 
 .PHONY: format
 format:
