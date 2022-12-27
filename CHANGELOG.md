@@ -3,6 +3,7 @@
 - Fixed incorrect truncation behavior.
 - Correctly handle `EIO` on linux.
 - Make EOF not appear if the process does not send to stderr.
+- Fixed incorrect SIGWINCH handling.
 
 # 0.2.0
 

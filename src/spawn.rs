@@ -8,7 +8,8 @@ use std::path::Path;
 use anyhow::Error;
 use nix::errno::Errno;
 use nix::libc::{
-    login_tty, O_NONBLOCK, SIGWINCH, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, TIOCGWINSZ, VEOF,
+    login_tty, O_NONBLOCK, SIGWINCH, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, TIOCGWINSZ,
+    TIOCSWINSZ, VEOF,
 };
 use nix::pty::{openpty, Winsize};
 use nix::sys::select::{select, FdSet};
@@ -306,7 +307,7 @@ fn get_winsize(fd: i32) -> Option<Winsize> {
 
 /// Sets the winsize
 fn set_winsize(fd: i32, winsize: Winsize) -> Result<(), Errno> {
-    nix::ioctl_write_ptr_bad!(_set_window_size, TIOCGWINSZ, Winsize);
+    nix::ioctl_write_ptr_bad!(_set_window_size, TIOCSWINSZ, Winsize);
     unsafe { _set_window_size(fd, &winsize) }?;
     Ok(())
 }
