@@ -92,7 +92,7 @@ pub fn spawn(opts: &SpawnOptions) -> Result<i32, Error> {
             close(stderr_pty.slave)?;
         }
         if term_attrs.is_some() {
-            sigwinch_passthrough(pty.master, stderr_pty.as_ref().map(|x| x.slave))?;
+            sigwinch_passthrough(pty.master, stderr_pty.as_ref().map(|x| x.master))?;
         }
         let mut out_file = match opts.out_path {
             Some(p) => Some(
@@ -305,9 +305,9 @@ fn get_winsize(fd: i32) -> Option<Winsize> {
 }
 
 /// Sets the winsize
-fn set_winsize(fd: i32, mut winsize: Winsize) -> Result<(), Errno> {
+fn set_winsize(fd: i32, winsize: Winsize) -> Result<(), Errno> {
     nix::ioctl_write_ptr_bad!(_set_window_size, TIOCGWINSZ, Winsize);
-    unsafe { _set_window_size(fd, &mut winsize) }?;
+    unsafe { _set_window_size(fd, &winsize) }?;
     Ok(())
 }
 
