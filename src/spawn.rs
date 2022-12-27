@@ -189,9 +189,8 @@ fn communication_loop(
 ) -> Result<i32, Error> {
     let mut buf = [0; 4096];
     let mut read_stdin = true;
-    let mut done = false;
 
-    while !done {
+    loop {
         let mut read_fds = FdSet::new();
         let mut timeout = TimeVal::new(1, 0);
         read_fds.insert(master);
@@ -223,6 +222,8 @@ fn communication_loop(
                     write_all(master, &buf[..n])?;
                 }
                 Err(Errno::EINTR | Errno::EAGAIN) => {}
+                // on linux a closed tty raises EIO
+                Err(Errno::EIO) => break,
                 Err(err) => return Err(err.into()),
             };
         }
@@ -240,16 +241,6 @@ fn communication_loop(
                 }
             }
         }
-        if read_fds.contains(master) {
-            match read(master, &mut buf) {
-                Ok(0) => {
-                    done = true;
-                }
-                Ok(n) => forward_and_log(STDOUT_FILENO, &mut out_file, &buf[..n], flush)?,
-                Err(Errno::EAGAIN | Errno::EINTR) => {}
-                Err(err) => return Err(err.into()),
-            };
-        }
         if let Some(fd) = stderr {
             if read_fds.contains(fd) {
                 match read(fd, &mut buf) {
@@ -259,6 +250,16 @@ fn communication_loop(
                     }
                 }
             }
+        }
+        if read_fds.contains(master) {
+            match read(master, &mut buf) {
+                Ok(0) => break,
+                Ok(n) => forward_and_log(STDOUT_FILENO, &mut out_file, &buf[..n], flush)?,
+                // on linux a closed tty raises EIO
+                Err(Errno::EIO) => break,
+                Err(Errno::EAGAIN | Errno::EINTR) => {}
+                Err(err) => return Err(err.into()),
+            };
         }
     }
 

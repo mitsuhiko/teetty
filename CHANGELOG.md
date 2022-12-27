@@ -1,6 +1,7 @@
 # 0.2.1
 
 - Fixed incorrect truncation behavior.
+- Correctly handle `EIO` on linux.
 
 # 0.2.0
 
