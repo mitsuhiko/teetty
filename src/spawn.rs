@@ -70,6 +70,7 @@ pub fn spawn(opts: &SpawnOptions) -> Result<i32, Error> {
             term_attrs.as_ref().map(|term_attrs| {
                 let mut raw_attrs = term_attrs.clone();
                 cfmakeraw(&mut raw_attrs);
+                raw_attrs.local_flags.remove(LocalFlags::ECHO);
                 tcsetattr(STDIN_FILENO, SetArg::TCSAFLUSH, &raw_attrs).ok();
                 RestoreTerm(term_attrs.clone())
             }),
@@ -87,7 +88,9 @@ pub fn spawn(opts: &SpawnOptions) -> Result<i32, Error> {
     }
 
     // set some flags after pty has been created.  We always want to remove the
-    // ECHO flag here as it sometimes does not get set originally.
+    // ECHO flag here so we don't see ^D and similar things in out output.
+    // Likewise for most uses we want to remove OPOST which will otherwise
+    // convert LF to CRLF.
     if let Ok(mut term_attrs) = tcgetattr(pty.master) {
         term_attrs
             .output_flags
