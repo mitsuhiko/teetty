@@ -104,6 +104,7 @@ fn test_script_mode() {
     let stderr = fs::read_to_string(&stderr).unwrap();
     let _out = fs::read_to_string(&out).unwrap();
 
+    dbg!(&stderr);
     assert_eq!(status.code(), Some(42));
 
     insta::assert_snapshot!(&stdout, @r###"

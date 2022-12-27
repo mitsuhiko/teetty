@@ -1,5 +1,5 @@
 use std::env;
-use std::ffi::{CString, OsString};
+use std::ffi::{CString, OsStr};
 use std::fs::File;
 use std::io::Write;
 use std::os::unix::prelude::{AsRawFd, OpenOptionsExt, OsStrExt};
@@ -24,14 +24,14 @@ use nix::unistd::{close, dup2, execvp, fork, mkfifo, read, tcgetpgrp, write, For
 use signal_hook::iterator::Signals;
 
 pub struct SpawnOptions<'a> {
-    pub args: &'a [OsString],
+    pub args: &'a [&'a OsStr],
+    pub in_path: Option<&'a Path>,
     pub out_path: Option<&'a Path>,
     pub truncate_out: bool,
     pub no_flush: bool,
     pub script_mode: bool,
     pub disable_pager: bool,
     pub disable_raw: bool,
-    pub in_path: Option<&'a Path>,
 }
 
 /// Spawns a process in a PTY in a manor similar to `script`
@@ -155,7 +155,7 @@ pub fn spawn(opts: &SpawnOptions) -> Result<i32, Error> {
     let args = opts
         .args
         .iter()
-        .filter_map(|x| CString::new(x.as_os_str().as_bytes()).ok())
+        .filter_map(|x| CString::new(x.as_bytes()).ok())
         .collect::<Vec<_>>();
     close(pty.master)?;
     if let Some(ref stderr_pty) = stderr_pty {

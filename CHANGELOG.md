@@ -1,3 +1,7 @@
+# 0.3.0
+
+- Trim down dependencies to no longer use clap derives.
+
 # 0.2.3
 
 - Restore `OPOST` for all modes but script mode.   Remove
