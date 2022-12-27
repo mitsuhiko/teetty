@@ -216,7 +216,11 @@ fn communication_loop(
         if read_fds.contains(STDIN_FILENO) {
             match read(STDIN_FILENO, &mut buf) {
                 Ok(0) => {
-                    send_eof_sequence(master);
+                    // if we're not actually connected to a terminal then sending a
+                    // control sequence on macOS can mess stuff up.
+                    if is_tty {
+                        send_eof_sequence(master);
+                    }
                     read_stdin = false;
                 }
                 Ok(n) => {
