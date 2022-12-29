@@ -30,11 +30,11 @@ pub struct SpawnOptions<'a> {
     pub in_path: Option<&'a Path>,
     pub out_path: Option<&'a Path>,
     pub truncate_out: bool,
+    pub script_mode: bool,
     pub no_flush: bool,
     pub no_echo: bool,
-    pub script_mode: bool,
-    pub disable_pager: bool,
-    pub disable_raw: bool,
+    pub no_pager: bool,
+    pub no_raw: bool,
 }
 
 /// Spawns a process in a PTY in a manor similar to `script`
@@ -67,7 +67,7 @@ pub fn spawn(opts: &SpawnOptions) -> Result<i32, Error> {
     // our shenanigans here we have no real guarantee that `Drop` is called so
     // there will be cases where the term is left in raw state and requires a
     // reset :(
-    } else if !opts.disable_raw {
+    } else if !opts.no_raw {
         (
             term_attrs.as_ref().map(|term_attrs| {
                 let mut raw_attrs = term_attrs.clone();
@@ -150,7 +150,7 @@ pub fn spawn(opts: &SpawnOptions) -> Result<i32, Error> {
     }
 
     // set the pagers to `cat` if it's disabled.
-    if opts.disable_pager || opts.script_mode {
+    if opts.no_pager || opts.script_mode {
         env::set_var("PAGER", "cat");
     }
 

@@ -53,20 +53,6 @@ pub fn execute() -> Result<i32, Error> {
                 .action(ArgAction::SetTrue),
         )
         .arg(
-            Arg::new("no_flush")
-                .help("Disables the default output flushing after all writes")
-                .short('F')
-                .long("no-flush")
-                .action(ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("no_echo")
-                .help("Disables echoing of inputs")
-                .short('E')
-                .long("no-echo")
-                .action(ArgAction::SetTrue),
-        )
-        .arg(
             Arg::new("script_mode")
                 .help(
                     "Enables script mode.  Script mode retains the separation of stdout/stderr, \
@@ -81,21 +67,39 @@ pub fn execute() -> Result<i32, Error> {
                 .action(ArgAction::SetTrue),
         )
         .arg(
-            Arg::new("disable_pager")
-                .help("Tries to tell a process to not use a pager like `LESS`")
-                .short('P')
-                .long("disable-pager")
+            Arg::new("no_flush")
+                .help("Disables the default output flushing after all writes")
+                .short('F')
+                .long("no-flush")
+                .aliases(["disable-flush"])
                 .action(ArgAction::SetTrue),
         )
         .arg(
-            Arg::new("disable_raw")
+            Arg::new("no_echo")
+                .help("Disables echoing of inputs")
+                .short('E')
+                .long("no-echo")
+                .aliases(["disable-echo"])
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("no_pager")
+                .help("Tries to tell a process to not use a pager like `LESS`")
+                .short('P')
+                .long("no-pager")
+                .aliases(["disable-pager"])
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("no_raw")
                 .help(
                     "Disables raw terminal mode.  Depending on the application being \
                     proxied you might want to enable this.  In script mode, raw mode \
                     is automatically disabled",
                 )
                 .short('R')
-                .long("disable-raw")
+                .long("no-raw")
+                .aliases(["disable-raw"])
                 .action(ArgAction::SetTrue),
         )
         .arg(
@@ -121,10 +125,10 @@ pub fn execute() -> Result<i32, Error> {
         in_path: matches.get_one::<PathBuf>("in_path").map(|x| x.as_path()),
         out_path: matches.get_one::<PathBuf>("out_path").map(|x| x.as_path()),
         truncate_out: matches.get_flag("truncate_out"),
+        script_mode: matches.get_flag("script_mode"),
         no_flush: matches.get_flag("no_flush"),
         no_echo: matches.get_flag("no_echo"),
-        script_mode: matches.get_flag("script_mode"),
-        disable_pager: matches.get_flag("disable_pager"),
-        disable_raw: matches.get_flag("disable_raw"),
+        no_pager: matches.get_flag("no_pager"),
+        no_raw: matches.get_flag("no_raw"),
     })
 }
