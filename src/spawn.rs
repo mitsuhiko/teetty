@@ -20,7 +20,9 @@ use nix::sys::termios::{
 };
 use nix::sys::time::TimeVal;
 use nix::sys::wait::{waitpid, WaitStatus};
-use nix::unistd::{close, dup2, execvp, fork, mkfifo, read, tcgetpgrp, write, ForkResult, Pid};
+use nix::unistd::{
+    close, dup2, execvp, fork, isatty, mkfifo, read, tcgetpgrp, write, ForkResult, Pid,
+};
 use signal_hook::iterator::Signals;
 
 pub struct SpawnOptions<'a> {
@@ -29,6 +31,7 @@ pub struct SpawnOptions<'a> {
     pub out_path: Option<&'a Path>,
     pub truncate_out: bool,
     pub no_flush: bool,
+    pub no_echo: bool,
     pub script_mode: bool,
     pub disable_pager: bool,
     pub disable_raw: bool,
@@ -86,15 +89,17 @@ pub fn spawn(opts: &SpawnOptions) -> Result<i32, Error> {
         mkfifo_atomic(&path)?;
     }
 
-    // set some flags after pty has been created.  We always want to remove the
-    // ECHO flag here so we don't see ^D and similar things in out output.
-    // Likewise in script mode we want to remove OPOST which will otherwise
-    // convert LF to CRLF.
+    // set some flags after pty has been created.  There are cases where we
+    // want to remove the ECHO flag so we don't see ^D and similar things in
+    // the output.  Likewise in script mode we want to remove OPOST which will
+    // otherwise convert LF to CRLF.
     if let Ok(mut term_attrs) = tcgetattr(pty.master) {
         if opts.script_mode {
             term_attrs.output_flags.remove(OutputFlags::OPOST);
         }
-        term_attrs.local_flags.remove(LocalFlags::ECHO);
+        if opts.no_echo || (opts.script_mode && !isatty(STDIN_FILENO).unwrap_or(false)) {
+            term_attrs.local_flags.remove(LocalFlags::ECHO);
+        }
         tcsetattr(pty.master, SetArg::TCSAFLUSH, &term_attrs).ok();
     }
 

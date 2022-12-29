@@ -54,9 +54,16 @@ pub fn execute() -> Result<i32, Error> {
         )
         .arg(
             Arg::new("no_flush")
-                .help("isables the default output flushing after all writes")
+                .help("Disables the default output flushing after all writes")
                 .short('F')
                 .long("no-flush")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("no_echo")
+                .help("Disables echoing of inputs")
+                .short('E')
+                .long("no-echo")
                 .action(ArgAction::SetTrue),
         )
         .arg(
@@ -75,7 +82,7 @@ pub fn execute() -> Result<i32, Error> {
         )
         .arg(
             Arg::new("disable_pager")
-                .help("ries to tell a process to not use a pager like `LESS`")
+                .help("Tries to tell a process to not use a pager like `LESS`")
                 .short('P')
                 .long("disable-pager")
                 .action(ArgAction::SetTrue),
@@ -115,6 +122,7 @@ pub fn execute() -> Result<i32, Error> {
         out_path: matches.get_one::<PathBuf>("out_path").map(|x| x.as_path()),
         truncate_out: matches.get_flag("truncate_out"),
         no_flush: matches.get_flag("no_flush"),
+        no_echo: matches.get_flag("no_echo"),
         script_mode: matches.get_flag("script_mode"),
         disable_pager: matches.get_flag("disable_pager"),
         disable_raw: matches.get_flag("disable_raw"),

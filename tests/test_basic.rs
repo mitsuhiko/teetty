@@ -11,6 +11,7 @@ fn test_basic() {
     let status = Command::new(env!("CARGO_BIN_EXE_teetty"))
         .arg("--out")
         .arg(&out)
+        .arg("--no-echo")
         .arg("--")
         .arg("tests/basic.sh")
         .stdout(File::create(&stdout).unwrap())
@@ -52,6 +53,7 @@ fn test_basic_truncate() {
         .arg("--out")
         .arg(&out)
         .arg("--truncate")
+        .arg("--no-echo")
         .arg("--")
         .arg("tests/basic.sh")
         .stdout(File::create(&stdout).unwrap())
@@ -125,6 +127,7 @@ fn test_script_mode() {
 fn test_pager() {
     let output = Command::new(env!("CARGO_BIN_EXE_teetty"))
         .arg("--disable-pager")
+        .arg("--no-echo")
         .arg("--")
         .arg("bash")
         .arg("-c")
@@ -132,5 +135,5 @@ fn test_pager() {
         .stdout(Stdio::piped())
         .output()
         .unwrap();
-    assert_eq!(&output.stdout, b"cat\r\n");
+    assert_eq!(String::from_utf8(output.stdout).unwrap().trim(), "cat");
 }

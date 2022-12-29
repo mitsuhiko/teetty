@@ -12,6 +12,7 @@ fn test_stdin() {
     let status = Command::new(env!("CARGO_BIN_EXE_teetty"))
         .arg("--out")
         .arg(&out)
+        .arg("--no-echo")
         .arg("--")
         .arg("tests/read.sh")
         .stdout(File::create(&stdout).unwrap())

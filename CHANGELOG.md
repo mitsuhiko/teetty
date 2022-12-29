@@ -1,6 +1,9 @@
 # 0.3.0
 
 - Trim down dependencies to no longer use clap derives.
+- Changed echo behavior to only disable ECHO in script mode if
+  it's not connected to a tty and not at all when it's used
+  outside of script mode unless `--no-echo` is given.
 
 # 0.2.3
 
