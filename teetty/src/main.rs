@@ -12,7 +12,7 @@ use nix::errno::Errno;
 use nix::libc::O_NONBLOCK;
 use nix::sys::stat::Mode;
 use nix::unistd::mkfifo;
-use tty_spawn::{spawn, SpawnOptions};
+use tty_spawn::SpawnOptions;
 
 fn execute() -> Result<i32, Error> {
     let matches = make_app().get_matches();
@@ -52,7 +52,7 @@ fn execute() -> Result<i32, Error> {
         None => None,
     };
 
-    Ok(spawn(SpawnOptions {
+    Ok(SpawnOptions {
         command: &command[..],
         in_file,
         out_file,
@@ -61,7 +61,8 @@ fn execute() -> Result<i32, Error> {
         no_echo: matches.get_flag("no_echo"),
         no_pager: matches.get_flag("no_pager"),
         no_raw: matches.get_flag("no_raw"),
-    })?)
+    }
+    .spawn()?)
 }
 
 fn make_app() -> Command {

@@ -31,136 +31,118 @@ pub struct SpawnOptions<'a> {
     pub no_raw: bool,
 }
 
-/// Spawns a process in a PTY in a manor similar to `script`
-/// but with separate stdout/stderr.
-///
-/// It leaves stdin/stdout/stderr connected but also writes events into the
-/// optional `out` log file.  Additionally it can retrieve instructions from
-/// the given control socket.
-pub fn spawn(mut opts: SpawnOptions) -> Result<i32, Errno> {
-    // if we can't retrieve the terminal atts we're not directly connected
-    // to a pty in which case we won't do any of the terminal related
-    // operations.
-    let term_attrs = tcgetattr(STDIN_FILENO).ok();
-    let winsize = term_attrs.as_ref().and_then(|_| get_winsize(STDIN_FILENO));
+impl<'a> SpawnOptions<'a> {
+    /// Spawns a process in a PTY in a manor similar to `script`
+    /// but with separate stdout/stderr.
+    ///
+    /// It leaves stdin/stdout/stderr connected but also writes events into the
+    /// optional `out` log file.  Additionally it can retrieve instructions from
+    /// the given control socket.
+    pub fn spawn(mut self) -> Result<i32, Errno> {
+        // if we can't retrieve the terminal atts we're not directly connected
+        // to a pty in which case we won't do any of the terminal related
+        // operations.
+        let term_attrs = tcgetattr(STDIN_FILENO).ok();
+        let winsize = term_attrs.as_ref().and_then(|_| get_winsize(STDIN_FILENO));
 
-    // Create the outer pty for stdout
-    let pty = openpty(&winsize, &term_attrs)?;
+        // Create the outer pty for stdout
+        let pty = openpty(&winsize, &term_attrs)?;
 
-    // In script mode we set up a secondary pty.  One could also use `pipe()`
-    // here but in that case the `isatty()` call on stderr would report that
-    // it's not connected to a tty which is what we want to prevent.
-    let (_restore_term, stderr_pty) = if opts.script_mode {
-        let term_attrs = tcgetattr(STDERR_FILENO).ok();
-        let winsize = term_attrs.as_ref().and_then(|_| get_winsize(STDERR_FILENO));
-        let stderr_pty = openpty(&winsize, &term_attrs)?;
-        (None, Some(stderr_pty))
+        // In script mode we set up a secondary pty.  One could also use `pipe()`
+        // here but in that case the `isatty()` call on stderr would report that
+        // it's not connected to a tty which is what we want to prevent.
+        let (_restore_term, stderr_pty) = if self.script_mode {
+            let term_attrs = tcgetattr(STDERR_FILENO).ok();
+            let winsize = term_attrs.as_ref().and_then(|_| get_winsize(STDERR_FILENO));
+            let stderr_pty = openpty(&winsize, &term_attrs)?;
+            (None, Some(stderr_pty))
 
-    // If we are not disabling raw, we change to raw mode.  This switches the
-    // terminal to raw mode and restores it on Drop.  Unfortunately due to all
-    // our shenanigans here we have no real guarantee that `Drop` is called so
-    // there will be cases where the term is left in raw state and requires a
-    // reset :(
-    } else if !opts.no_raw {
-        (
-            term_attrs.as_ref().map(|term_attrs| {
-                let mut raw_attrs = term_attrs.clone();
-                cfmakeraw(&mut raw_attrs);
-                raw_attrs.local_flags.remove(LocalFlags::ECHO);
-                tcsetattr(STDIN_FILENO, SetArg::TCSAFLUSH, &raw_attrs).ok();
-                RestoreTerm(term_attrs.clone())
-            }),
-            None,
-        )
+        // If we are not disabling raw, we change to raw mode.  This switches the
+        // terminal to raw mode and restores it on Drop.  Unfortunately due to all
+        // our shenanigans here we have no real guarantee that `Drop` is called so
+        // there will be cases where the term is left in raw state and requires a
+        // reset :(
+        } else if !self.no_raw {
+            (
+                term_attrs.as_ref().map(|term_attrs| {
+                    let mut raw_attrs = term_attrs.clone();
+                    cfmakeraw(&mut raw_attrs);
+                    raw_attrs.local_flags.remove(LocalFlags::ECHO);
+                    tcsetattr(STDIN_FILENO, SetArg::TCSAFLUSH, &raw_attrs).ok();
+                    RestoreTerm(term_attrs.clone())
+                }),
+                None,
+            )
 
-    // at this point we're neither in scrop mode, nor is raw enabled. do nothing
-    } else {
-        (None, None)
-    };
+        // at this point we're neither in scrop mode, nor is raw enabled. do nothing
+        } else {
+            (None, None)
+        };
 
-    // set some flags after pty has been created.  There are cases where we
-    // want to remove the ECHO flag so we don't see ^D and similar things in
-    // the output.  Likewise in script mode we want to remove OPOST which will
-    // otherwise convert LF to CRLF.
-    if let Ok(mut term_attrs) = tcgetattr(pty.master) {
-        if opts.script_mode {
-            term_attrs.output_flags.remove(OutputFlags::OPOST);
+        // set some flags after pty has been created.  There are cases where we
+        // want to remove the ECHO flag so we don't see ^D and similar things in
+        // the output.  Likewise in script mode we want to remove OPOST which will
+        // otherwise convert LF to CRLF.
+        if let Ok(mut term_attrs) = tcgetattr(pty.master) {
+            if self.script_mode {
+                term_attrs.output_flags.remove(OutputFlags::OPOST);
+            }
+            if self.no_echo || (self.script_mode && !isatty(STDIN_FILENO).unwrap_or(false)) {
+                term_attrs.local_flags.remove(LocalFlags::ECHO);
+            }
+            tcsetattr(pty.master, SetArg::TCSAFLUSH, &term_attrs).ok();
         }
-        if opts.no_echo || (opts.script_mode && !isatty(STDIN_FILENO).unwrap_or(false)) {
-            term_attrs.local_flags.remove(LocalFlags::ECHO);
-        }
-        tcsetattr(pty.master, SetArg::TCSAFLUSH, &term_attrs).ok();
-    }
 
-    // Fork and establish the communication loop in the parent.  This unfortunately
-    // has to merge stdout/stderr since the pseudo terminal only has one stream for
-    // both.
-    if let ForkResult::Parent { child } = unsafe { fork()? } {
-        close(pty.slave)?;
+        // Fork and establish the communication loop in the parent.  This unfortunately
+        // has to merge stdout/stderr since the pseudo terminal only has one stream for
+        // both.
+        if let ForkResult::Parent { child } = unsafe { fork()? } {
+            close(pty.slave)?;
+            if let Some(ref stderr_pty) = stderr_pty {
+                close(stderr_pty.slave)?;
+            }
+            if term_attrs.is_some() {
+                sigwinch_passthrough(pty.master, stderr_pty.as_ref().map(|x| x.master))?;
+            }
+            return Ok(communication_loop(
+                pty.master,
+                child,
+                term_attrs.is_some(),
+                self.out_file.as_mut(),
+                self.in_file.as_mut(),
+                stderr_pty.as_ref().map(|x| x.master),
+                !self.no_flush,
+            )?);
+        }
+
+        // set the pagers to `cat` if it's disabled.
+        if self.no_pager || self.script_mode {
+            env::set_var("PAGER", "cat");
+        }
+
+        // If we reach this point we're the child and we want to turn into the
+        // target executable after having set up the tty with `login_tty` which
+        // rebinds stdin/stdout/stderr to the pty.
+        let args = self
+            .command
+            .iter()
+            .filter_map(|x| CString::new(x.as_bytes()).ok())
+            .collect::<Vec<_>>();
+        close(pty.master)?;
         if let Some(ref stderr_pty) = stderr_pty {
-            close(stderr_pty.slave)?;
+            close(stderr_pty.master)?;
         }
-        if term_attrs.is_some() {
-            sigwinch_passthrough(pty.master, stderr_pty.as_ref().map(|x| x.master))?;
-        }
-        return Ok(communication_loop(
-            pty.master,
-            child,
-            term_attrs.is_some(),
-            opts.out_file.as_mut(),
-            opts.in_file.as_mut(),
-            stderr_pty.as_ref().map(|x| x.master),
-            !opts.no_flush,
-        )?);
-    }
-
-    // set the pagers to `cat` if it's disabled.
-    if opts.no_pager || opts.script_mode {
-        env::set_var("PAGER", "cat");
-    }
-
-    // If we reach this point we're the child and we want to turn into the
-    // target executable after having set up the tty with `login_tty` which
-    // rebinds stdin/stdout/stderr to the pty.
-    let args = opts
-        .command
-        .iter()
-        .filter_map(|x| CString::new(x.as_bytes()).ok())
-        .collect::<Vec<_>>();
-    close(pty.master)?;
-    if let Some(ref stderr_pty) = stderr_pty {
-        close(stderr_pty.master)?;
-    }
-    unsafe {
-        login_tty(pty.slave);
-        if let Some(ref stderr_pty) = stderr_pty {
-            dup2(stderr_pty.slave, STDERR_FILENO)?;
-        }
-    }
-
-    // Since this returns Infallible rather than ! due to limitations, we need
-    // this dummy match.
-    match execvp(&args[0], &args)? {}
-}
-
-/// Listens to a SIGWINCH signal in a background thread and forwards it to the pty.
-fn sigwinch_passthrough(master: i32, stderr_master: Option<i32>) -> Result<(), Errno> {
-    // this does not seem to work properly with vim at least.  It's probably that the
-    // killpg is going to the wrong process?
-    std::thread::spawn(move || {
-        for _ in &mut Signals::new(&[SIGWINCH]).unwrap() {
-            if let Some(winsize) = get_winsize(STDIN_FILENO) {
-                set_winsize(master, winsize).ok();
-                if let Some(second_master) = stderr_master {
-                    set_winsize(second_master, winsize).ok();
-                }
-                if let Ok(pgrp) = tcgetpgrp(master) {
-                    killpg(pgrp, Signal::SIGWINCH).ok();
-                }
+        unsafe {
+            login_tty(pty.slave);
+            if let Some(ref stderr_pty) = stderr_pty {
+                dup2(stderr_pty.slave, STDERR_FILENO)?;
             }
         }
-    });
-    Ok(())
+
+        // Since this returns Infallible rather than ! due to limitations, we need
+        // this dummy match.
+        match execvp(&args[0], &args)? {}
+    }
 }
 
 fn communication_loop(
@@ -277,6 +259,26 @@ fn forward_and_log(
         }
     }
     write_all(fd, buf)?;
+    Ok(())
+}
+
+/// Listens to a SIGWINCH signal in a background thread and forwards it to the pty.
+fn sigwinch_passthrough(master: i32, stderr_master: Option<i32>) -> Result<(), Errno> {
+    // this does not seem to work properly with vim at least.  It's probably that the
+    // killpg is going to the wrong process?
+    std::thread::spawn(move || {
+        for _ in &mut Signals::new(&[SIGWINCH]).unwrap() {
+            if let Some(winsize) = get_winsize(STDIN_FILENO) {
+                set_winsize(master, winsize).ok();
+                if let Some(second_master) = stderr_master {
+                    set_winsize(second_master, winsize).ok();
+                }
+                if let Ok(pgrp) = tcgetpgrp(master) {
+                    killpg(pgrp, Signal::SIGWINCH).ok();
+                }
+            }
+        }
+    });
     Ok(())
 }
 
