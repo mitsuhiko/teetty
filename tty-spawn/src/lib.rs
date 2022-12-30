@@ -1,3 +1,7 @@
+//! `tty-spawn` is the underlying library on which
+//! [`teetty`](https://github.com/mitsuhiko/teetty) is built.  It lets you spawn
+//! processes in a fake TTY and duplex stdin/stdout so you can communicate with an
+//! otherwise user attended process.
 use std::ffi::{CString, OsStr, OsString};
 use std::fs::File;
 use std::io::Write;
