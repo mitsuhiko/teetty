@@ -13,7 +13,8 @@ any different from if you were not to pass it through `teetty`.  From the
 perspective of the program, it's connected to a terminal.  At the same time
 however `teetty` multiplexes the output into both terminal and an optional log
 file and it also lets you send input remotely into the program while the user's
-keyboard is still attached.
+keyboard is still attached.  The underlying functionality is available in the
+[`tty-spawn`](https://github.com/mitsuhiko/teetty/tree/main/tty-spawn) crate.
 
 ```bash
 $ cargo install teetty
