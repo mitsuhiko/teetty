@@ -3,10 +3,12 @@ use std::ffi::{CString, OsStr};
 use std::fs::File;
 use std::io::Write;
 use std::os::unix::prelude::{AsRawFd, OsStrExt};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use nix::errno::Errno;
 use nix::libc::{
-    login_tty, SIGWINCH, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, TIOCGWINSZ, TIOCSWINSZ, VEOF,
+    login_tty, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, TIOCGWINSZ, TIOCSWINSZ, VEOF,
 };
 use nix::pty::{openpty, Winsize};
 use nix::sys::select::{select, FdSet};
@@ -17,7 +19,7 @@ use nix::sys::termios::{
 use nix::sys::time::TimeVal;
 use nix::sys::wait::{waitpid, WaitStatus};
 use nix::unistd::{close, dup2, execvp, fork, isatty, read, tcgetpgrp, write, ForkResult, Pid};
-use signal_hook::iterator::Signals;
+use signal_hook::consts::SIGWINCH;
 
 /// Controls how the process spawns.
 pub struct SpawnOptions<'a> {
@@ -101,9 +103,6 @@ impl<'a> SpawnOptions<'a> {
             if let Some(ref stderr_pty) = stderr_pty {
                 close(stderr_pty.slave)?;
             }
-            if term_attrs.is_some() {
-                sigwinch_passthrough(pty.master, stderr_pty.as_ref().map(|x| x.master))?;
-            }
             return Ok(communication_loop(
                 pty.master,
                 child,
@@ -158,7 +157,17 @@ fn communication_loop(
     let mut read_stdin = true;
     let mut done = false;
 
+    let got_winch = Arc::new(AtomicBool::new(false));
+    if is_tty {
+        signal_hook::flag::register(SIGWINCH, Arc::clone(&got_winch)).ok();
+    }
+
     while !done {
+        if got_winch.load(Ordering::Relaxed) {
+            forward_winsize(master, stderr)?;
+            got_winch.store(false, Ordering::Relaxed);
+        }
+
         let mut read_fds = FdSet::new();
         let mut timeout = TimeVal::new(1, 0);
         read_fds.insert(master);
@@ -262,23 +271,17 @@ fn forward_and_log(
     Ok(())
 }
 
-/// Listens to a SIGWINCH signal in a background thread and forwards it to the pty.
-fn sigwinch_passthrough(master: i32, stderr_master: Option<i32>) -> Result<(), Errno> {
-    // this does not seem to work properly with vim at least.  It's probably that the
-    // killpg is going to the wrong process?
-    std::thread::spawn(move || {
-        for _ in &mut Signals::new(&[SIGWINCH]).unwrap() {
-            if let Some(winsize) = get_winsize(STDIN_FILENO) {
-                set_winsize(master, winsize).ok();
-                if let Some(second_master) = stderr_master {
-                    set_winsize(second_master, winsize).ok();
-                }
-                if let Ok(pgrp) = tcgetpgrp(master) {
-                    killpg(pgrp, Signal::SIGWINCH).ok();
-                }
-            }
+/// Forwards the winsize and emits SIGWINCH
+fn forward_winsize(master: i32, stderr_master: Option<i32>) -> Result<(), Errno> {
+    if let Some(winsize) = get_winsize(STDIN_FILENO) {
+        set_winsize(master, winsize).ok();
+        if let Some(second_master) = stderr_master {
+            set_winsize(second_master, winsize).ok();
         }
-    });
+        if let Ok(pgrp) = tcgetpgrp(master) {
+            killpg(pgrp, Signal::SIGWINCH).ok();
+        }
+    }
     Ok(())
 }
 
