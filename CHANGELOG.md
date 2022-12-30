@@ -5,6 +5,7 @@
   it's not connected to a tty and not at all when it's used
   outside of script mode unless `--no-echo` is given.
 - Changed all `--disable-X` to `--no-X` with hidden aliases.
+- Extracted internals into the `tty-spawn` library.
 
 # 0.2.3
 
