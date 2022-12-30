@@ -271,10 +271,8 @@ name = "tty-spawn"
 version = "0.3.0"
 dependencies = [
  "anyhow",
- "insta",
  "nix",
  "signal-hook",
- "tempfile",
 ]
 
 [[package]]

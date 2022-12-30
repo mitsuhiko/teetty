@@ -6,17 +6,14 @@ description = "The internal tty spawning functionality of the teetty utility"
 repository = "https://github.com/mitsuhiko/teetty"
 version = "0.3.0"
 edition = "2021"
+rust-version = "1.60.0"
 keywords = ["pty", "script", "tty", "tee"]
 readme = "README.md"
 exclude = [
-    "assets/*"
+    "tests/*"
 ]
 
 [dependencies]
 anyhow = "1.0.68"
 nix = { version = "0.26.1", default-features = false, features = ["fs", "process", "term", "ioctl", "signal", "poll"] }
 signal-hook = { version = "0.3.14", default-features = false }
-
-[dev-dependencies]
-insta = "1.23.0"
-tempfile = "3.3.0"
