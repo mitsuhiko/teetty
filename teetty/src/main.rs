@@ -1,18 +1,12 @@
 use std::ffi::OsString;
-use std::fs::File;
 use std::io::Write;
-use std::os::unix::prelude::OpenOptionsExt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::exit;
 
 use anyhow::Error;
 use clap::{Arg, ArgAction, Command};
 
-use nix::errno::Errno;
-use nix::libc::O_NONBLOCK;
-use nix::sys::stat::Mode;
-use nix::unistd::mkfifo;
-use tty_spawn::SpawnOptions;
+use tty_spawn::TtySpawn;
 
 fn execute() -> Result<i32, Error> {
     let matches = make_app().get_matches();
@@ -22,47 +16,21 @@ fn execute() -> Result<i32, Error> {
         return Ok(0);
     }
 
-    let command = matches
-        .get_many::<OsString>("command")
-        .unwrap()
-        .map(|x| x.as_os_str())
-        .collect::<Vec<_>>();
-    let in_file = match matches.get_one::<PathBuf>("in_path") {
-        Some(p) => {
-            mkfifo_atomic(&p)?;
-            Some(
-                File::options()
-                    .read(true)
-                    .custom_flags(O_NONBLOCK)
-                    .open(p)?,
-            )
-        }
-        None => None,
-    };
-    let out_file = match matches.get_one::<PathBuf>("out_path") {
-        Some(p) => Some(if !matches.get_flag("truncate_out") {
-            File::options().append(true).create(true).open(p)?
-        } else {
-            File::options()
-                .create(true)
-                .truncate(true)
-                .write(true)
-                .open(p)?
-        }),
-        None => None,
-    };
+    let mut spawn = TtySpawn::new_cmdline(matches.get_many::<OsString>("command").unwrap());
+    spawn.script_mode(matches.get_flag("script_mode"));
+    spawn.flush(!matches.get_flag("no_flush"));
+    spawn.echo(!matches.get_flag("no_echo"));
+    spawn.pager(!matches.get_flag("no_pager"));
+    spawn.raw(!matches.get_flag("no_raw"));
 
-    Ok(SpawnOptions {
-        command: &command[..],
-        in_file,
-        out_file,
-        script_mode: matches.get_flag("script_mode"),
-        no_flush: matches.get_flag("no_flush"),
-        no_echo: matches.get_flag("no_echo"),
-        no_pager: matches.get_flag("no_pager"),
-        no_raw: matches.get_flag("no_raw"),
+    if let Some(p) = matches.get_one::<PathBuf>("in_path") {
+        spawn.stdin_path(&p)?;
     }
-    .spawn()?)
+    if let Some(p) = matches.get_one::<PathBuf>("out_path") {
+        spawn.stdout_path(p, matches.get_flag("truncate_out"))?;
+    }
+
+    Ok(spawn.spawn()?)
 }
 
 fn make_app() -> Command {
@@ -167,14 +135,6 @@ fn make_app() -> Command {
                 .long("version")
                 .action(ArgAction::SetTrue),
         )
-}
-
-/// Creates a FIFO at the path if the file does not exist yet.
-fn mkfifo_atomic(path: &Path) -> Result<(), Errno> {
-    match mkfifo(path, Mode::S_IRUSR | Mode::S_IWUSR) {
-        Ok(()) | Err(Errno::EEXIST) => Ok(()),
-        Err(err) => Err(err),
-    }
 }
 
 fn main() {

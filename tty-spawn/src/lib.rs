@@ -1,39 +1,196 @@
-use std::env;
-use std::ffi::{CString, OsStr};
+use std::ffi::{CString, OsStr, OsString};
 use std::fs::File;
 use std::io::Write;
-use std::os::unix::prelude::{AsRawFd, OsStrExt};
+use std::os::unix::prelude::{AsRawFd, OpenOptionsExt, OsStrExt};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::{env, io};
 
 use nix::errno::Errno;
 use nix::libc::{
-    login_tty, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, TIOCGWINSZ, TIOCSWINSZ, VEOF,
+    login_tty, O_NONBLOCK, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, TIOCGWINSZ, TIOCSWINSZ, VEOF,
 };
 use nix::pty::{openpty, Winsize};
 use nix::sys::select::{select, FdSet};
 use nix::sys::signal::{killpg, Signal};
+use nix::sys::stat::Mode;
 use nix::sys::termios::{
     cfmakeraw, tcgetattr, tcsetattr, LocalFlags, OutputFlags, SetArg, Termios,
 };
 use nix::sys::time::TimeVal;
 use nix::sys::wait::{waitpid, WaitStatus};
-use nix::unistd::{close, dup2, execvp, fork, isatty, read, tcgetpgrp, write, ForkResult, Pid};
+use nix::unistd::{
+    close, dup2, execvp, fork, isatty, mkfifo, read, tcgetpgrp, write, ForkResult, Pid,
+};
 use signal_hook::consts::SIGWINCH;
 
-/// Controls how the process spawns.
-pub struct SpawnOptions<'a> {
-    pub command: &'a [&'a OsStr],
-    pub in_file: Option<File>,
-    pub out_file: Option<File>,
-    pub script_mode: bool,
-    pub no_flush: bool,
-    pub no_echo: bool,
-    pub no_pager: bool,
-    pub no_raw: bool,
+/// Lets you spawn processes with a TTY connected.
+pub struct TtySpawn {
+    options: Option<SpawnOptions>,
 }
 
-impl<'a> SpawnOptions<'a> {
+impl TtySpawn {
+    /// Creates a new [`TtySpawn`] for a given command.
+    pub fn new<S: AsRef<OsStr>>(cmd: S) -> TtySpawn {
+        TtySpawn {
+            options: Some(SpawnOptions {
+                command: vec![cmd.as_ref().to_os_string()],
+                stdin_file: None,
+                stdout_file: None,
+                script_mode: false,
+                no_flush: false,
+                no_echo: false,
+                no_pager: false,
+                no_raw: false,
+            }),
+        }
+    }
+
+    /// Alternative way to construct a [`TtySpawn`].
+    ///
+    /// Takes an iterator of command and arguments.  If the iterator is empty this
+    /// panicks.
+    ///
+    /// # Panicks
+    ///
+    /// If the iterator is empty, this panics.
+    pub fn new_cmdline<S: AsRef<OsStr>, I: Iterator<Item = S>>(mut cmdline: I) -> Self {
+        let mut rv = TtySpawn::new(cmdline.next().expect("empty cmdline"));
+        rv.args(cmdline);
+        rv
+    }
+
+    /// Adds a new argument to the command.
+    pub fn arg<S: AsRef<OsStr>>(&mut self, arg: S) -> &mut Self {
+        self.options_mut().command.push(arg.as_ref().to_os_string());
+        self
+    }
+
+    /// Adds multiple arguments from an iterator.
+    pub fn args<S: AsRef<OsStr>, I: Iterator<Item = S>>(&mut self, args: I) -> &mut Self {
+        for arg in args {
+            self.arg(arg);
+        }
+        self
+    }
+
+    /// Sets an input file for stdin.
+    ///
+    /// It's recommended that this is a named pipe and as a general recommendation
+    /// this file should be opened with `O_NONBLOCK`.
+    pub fn stdin_file(&mut self, f: File) -> &mut Self {
+        self.options_mut().stdin_file = Some(f);
+        self
+    }
+
+    /// Sets a path as input file for stdin.
+    pub fn stdin_path<P: AsRef<Path>>(&mut self, path: P) -> Result<&mut Self, io::Error> {
+        let path = path.as_ref();
+        mkfifo_atomic(&path)?;
+        Ok(self.stdin_file(
+            File::options()
+                .read(true)
+                .custom_flags(O_NONBLOCK)
+                .open(path)?,
+        ))
+    }
+
+    /// Sets an output file for stdout.
+    pub fn stdout_file(&mut self, f: File) -> &mut Self {
+        self.options_mut().stdout_file = Some(f);
+        self
+    }
+
+    /// Sets a path as output file for stdout.
+    ///
+    /// If the `truncate` flag is set to `true` the file will be truncated
+    /// first, otherwise it will be appended to.
+    pub fn stdout_path<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+        truncate: bool,
+    ) -> Result<&mut Self, io::Error> {
+        Ok(self.stdout_file(if !truncate {
+            File::options().append(true).create(true).open(path)?
+        } else {
+            File::options()
+                .create(true)
+                .truncate(true)
+                .write(true)
+                .open(path)?
+        }))
+    }
+
+    /// Enables script mode.
+    ///
+    /// In script mode stdout/stderr are retained as separate streams, the terminal is
+    /// not opened in raw mode.  Additionally some output processing is disabled so
+    /// usually you will find LF retained and not converted to CLRF.  This will also
+    /// attempt to disable pagers and turn off ECHO intelligently in some cases.
+    pub fn script_mode(&mut self, yes: bool) -> &mut Self {
+        self.options_mut().script_mode = yes;
+        self
+    }
+
+    /// Can be used to turn flushing off.
+    ///
+    /// By default output is flushed constantly.
+    pub fn flush(&mut self, yes: bool) -> &mut Self {
+        self.options_mut().no_flush = !yes;
+        self
+    }
+
+    /// Can be used to turn echo off.
+    ///
+    /// By default echo is turned on.
+    pub fn echo(&mut self, yes: bool) -> &mut Self {
+        self.options_mut().no_echo = !yes;
+        self
+    }
+
+    /// Tries to use `cat` as pager.
+    ///
+    /// When this is enabled then processes are instructed to use `cat` as pager.
+    /// This is useful when raw terminals are disabled in which case most pagers
+    /// will break.
+    pub fn pager(&mut self, yes: bool) -> &mut Self {
+        self.options_mut().no_pager = !yes;
+        self
+    }
+
+    /// Can be used to turn raw terminal mode off.
+    ///
+    /// By default the terminal is in raw mode but in some cases you might want to
+    /// turn this off.  If raw mode is disabled then pagers will not work and so
+    /// will most input operations.
+    pub fn raw(&mut self, yes: bool) -> &mut Self {
+        self.options_mut().no_raw = !yes;
+        self
+    }
+
+    /// Spawns the application in the TTY.
+    pub fn spawn(&mut self) -> Result<i32, io::Error> {
+        Ok(self.options.take().unwrap().spawn()?)
+    }
+
+    fn options_mut(&mut self) -> &mut SpawnOptions {
+        self.options.as_mut().expect("builder only works once")
+    }
+}
+
+pub struct SpawnOptions {
+    command: Vec<OsString>,
+    stdin_file: Option<File>,
+    stdout_file: Option<File>,
+    script_mode: bool,
+    no_flush: bool,
+    no_echo: bool,
+    no_pager: bool,
+    no_raw: bool,
+}
+
+impl SpawnOptions {
     /// Spawns a process in a PTY in a manor similar to `script`
     /// but with separate stdout/stderr.
     ///
@@ -107,8 +264,8 @@ impl<'a> SpawnOptions<'a> {
                 pty.master,
                 child,
                 term_attrs.is_some(),
-                self.out_file.as_mut(),
-                self.in_file.as_mut(),
+                self.stdout_file.as_mut(),
+                self.stdin_file.as_mut(),
                 stderr_pty.as_ref().map(|x| x.master),
                 !self.no_flush,
             )?);
@@ -317,6 +474,14 @@ fn write_all(fd: i32, mut buf: &[u8]) -> Result<(), Errno> {
         buf = &buf[n..];
     }
     Ok(())
+}
+
+/// Creates a FIFO at the path if the file does not exist yet.
+fn mkfifo_atomic(path: &Path) -> Result<(), Errno> {
+    match mkfifo(path, Mode::S_IRUSR | Mode::S_IWUSR) {
+        Ok(()) | Err(Errno::EEXIST) => Ok(()),
+        Err(err) => Err(err),
+    }
 }
 
 struct RestoreTerm(Termios);
