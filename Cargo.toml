@@ -1,23 +1,2 @@
-[package]
-name = "teetty"
-license = "Apache-2.0"
-authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
-description = " A bit like tee, a bit like script, but all with a fake tty. Lets you remote control and watch a process."
-repository = "https://github.com/mitsuhiko/teetty"
-version = "0.2.3"
-edition = "2021"
-keywords = ["pty", "script", "tty", "tee"]
-readme = "README.md"
-exclude = [
-    "assets/*"
-]
-
-[dependencies]
-anyhow = "1.0.68"
-clap = { version = "4.0.30", default-features = false, features = ["std", "help", "wrap_help", "error-context"] }
-nix = { version = "0.26.1", default-features = false, features = ["fs", "process", "term", "ioctl", "signal", "poll"] }
-signal-hook = "0.3.14"
-
-[dev-dependencies]
-insta = "1.23.0"
-tempfile = "3.3.0"
+[workspace]
+members = ["teetty", "tty-spawn"]

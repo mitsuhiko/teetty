@@ -1,0 +1,22 @@
+[package]
+name = "tty-spawn"
+license = "Apache-2.0"
+authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
+description = "The internal tty spawning functionality of the teetty utility"
+repository = "https://github.com/mitsuhiko/teetty"
+version = "0.3.0"
+edition = "2021"
+keywords = ["pty", "script", "tty", "tee"]
+readme = "README.md"
+exclude = [
+    "assets/*"
+]
+
+[dependencies]
+anyhow = "1.0.68"
+nix = { version = "0.26.1", default-features = false, features = ["fs", "process", "term", "ioctl", "signal", "poll"] }
+signal-hook = "0.3.14"
+
+[dev-dependencies]
+insta = "1.23.0"
+tempfile = "3.3.0"

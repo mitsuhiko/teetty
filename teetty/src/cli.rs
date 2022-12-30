@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use anyhow::Error;
 use clap::{Arg, ArgAction, Command};
 
-use crate::spawn::{spawn, SpawnOptions};
+use tty_spawn::{spawn, SpawnOptions};
 
 pub fn execute() -> Result<i32, Error> {
     let matches = Command::new("teetty")
@@ -120,6 +120,7 @@ pub fn execute() -> Result<i32, Error> {
         .unwrap()
         .map(|x| x.as_os_str())
         .collect::<Vec<_>>();
+
     spawn(&SpawnOptions {
         args: &args[..],
         in_path: matches.get_one::<PathBuf>("in_path").map(|x| x.as_path()),

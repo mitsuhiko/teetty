@@ -3,15 +3,15 @@ all: test
 
 .PHONY: build
 check:
-	@cargo check --all-features
+	@cargo check --all --all-features
 
 .PHONY: doc
 doc:
-	@cargo doc --all-features
+	@cargo doc --all --all-features
 
 .PHONY: all
 test:
-	@cargo test -- --test-threads=1 < /dev/null
+	@cargo test --all -- --test-threads=1 < /dev/null
 
 .PHONY: format
 format:

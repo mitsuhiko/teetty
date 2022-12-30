@@ -28,9 +28,9 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "clap"
-version = "4.0.32"
+version = "4.0.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7db700bc935f9e43e88d00b0850dae18a63773cfbec6d8e070fccf7fef89a39"
+checksum = "656ad1e55e23d287773f7d8192c300dc715c3eeded93b3da651d11c42cfd74d2"
 dependencies = [
  "bitflags",
  "clap_lex",
@@ -134,9 +134,9 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "libc"
-version = "0.2.139"
+version = "0.2.138"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "201de327520df007757c1f0adce6e827fe8562fbc28bfd9c15571c66ca1f5f79"
+checksum = "db6d7e329c562c5dfab7a46a2afabc8b987ab9a4834c9d1ca04dc54c1546cef8"
 
 [[package]]
 name = "linked-hash-map"
@@ -233,13 +233,14 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "teetty"
-version = "0.3.0"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "clap",
  "insta",
+ "nix",
+ "signal-hook",
  "tempfile",
- "tty-spawn",
 ]
 
 [[package]]
@@ -264,17 +265,6 @@ checksum = "cb20089a8ba2b69debd491f8d2d023761cbf196e999218c591fa1e7e15a21907"
 dependencies = [
  "rustix",
  "windows-sys",
-]
-
-[[package]]
-name = "tty-spawn"
-version = "0.3.0"
-dependencies = [
- "anyhow",
- "insta",
- "nix",
- "signal-hook",
- "tempfile",
 ]
 
 [[package]]

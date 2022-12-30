@@ -1,5 +1,4 @@
 mod cli;
-mod spawn;
 
 fn main() {
     let code = match cli::execute() {
