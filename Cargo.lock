@@ -238,7 +238,6 @@ dependencies = [
  "anyhow",
  "clap",
  "insta",
- "nix",
  "tempfile",
  "tty-spawn",
 ]

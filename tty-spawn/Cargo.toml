@@ -15,7 +15,7 @@ exclude = [
 [dependencies]
 anyhow = "1.0.68"
 nix = { version = "0.26.1", default-features = false, features = ["fs", "process", "term", "ioctl", "signal", "poll"] }
-signal-hook = "0.3.14"
+signal-hook = { version = "0.3.14", default-features = false }
 
 [dev-dependencies]
 insta = "1.23.0"

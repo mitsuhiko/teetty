@@ -16,7 +16,6 @@ exclude = [
 anyhow = "1.0.68"
 tty-spawn = { version = "=0.3.0", path = "../tty-spawn" }
 clap = { version = "4.0.30", default-features = false, features = ["std", "help", "wrap_help", "error-context"] }
-nix = { version = "0.26.1", default-features = false, features = ["fs"] }
 
 [dev-dependencies]
 insta = "1.23.0"
