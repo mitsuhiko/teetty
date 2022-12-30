@@ -1,13 +1,69 @@
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::fs::File;
+use std::os::unix::prelude::OpenOptionsExt;
+use std::path::{Path, PathBuf};
 
 use anyhow::Error;
 use clap::{Arg, ArgAction, Command};
 
+use nix::errno::Errno;
+use nix::libc::O_NONBLOCK;
+use nix::sys::stat::Mode;
+use nix::unistd::mkfifo;
 use tty_spawn::{spawn, SpawnOptions};
 
 pub fn execute() -> Result<i32, Error> {
-    let matches = Command::new("teetty")
+    let matches = make_app().get_matches();
+
+    if matches.get_flag("version") {
+        eprintln!("teetty {}", env!("CARGO_PKG_VERSION"));
+        return Ok(0);
+    }
+
+    let command = matches
+        .get_many::<OsString>("command")
+        .unwrap()
+        .map(|x| x.as_os_str())
+        .collect::<Vec<_>>();
+    let in_file = match matches.get_one::<PathBuf>("in_path") {
+        Some(p) => {
+            mkfifo_atomic(&p)?;
+            Some(
+                File::options()
+                    .read(true)
+                    .custom_flags(O_NONBLOCK)
+                    .open(p)?,
+            )
+        }
+        None => None,
+    };
+    let out_file = match matches.get_one::<PathBuf>("out_path") {
+        Some(p) => Some(if !matches.get_flag("truncate_out") {
+            File::options().append(true).create(true).open(p)?
+        } else {
+            File::options()
+                .create(true)
+                .truncate(true)
+                .write(true)
+                .open(p)?
+        }),
+        None => None,
+    };
+
+    Ok(spawn(SpawnOptions {
+        command: &command[..],
+        in_file,
+        out_file,
+        script_mode: matches.get_flag("script_mode"),
+        no_flush: matches.get_flag("no_flush"),
+        no_echo: matches.get_flag("no_echo"),
+        no_pager: matches.get_flag("no_pager"),
+        no_raw: matches.get_flag("no_raw"),
+    })?)
+}
+
+fn make_app() -> Command {
+    Command::new("teetty")
         .override_usage("teetty [OPTIONS] -- [COMMAND ...]")
         .max_term_width(92)
         .about(
@@ -108,28 +164,12 @@ pub fn execute() -> Result<i32, Error> {
                 .long("version")
                 .action(ArgAction::SetTrue),
         )
-        .get_matches();
+}
 
-    if matches.get_flag("version") {
-        eprintln!("teetty {}", env!("CARGO_PKG_VERSION"));
-        return Ok(0);
+/// Creates a FIFO at the path if the file does not exist yet.
+fn mkfifo_atomic(path: &Path) -> Result<(), Errno> {
+    match mkfifo(path, Mode::S_IRUSR | Mode::S_IWUSR) {
+        Ok(()) | Err(Errno::EEXIST) => Ok(()),
+        Err(err) => Err(err),
     }
-
-    let args = matches
-        .get_many::<OsString>("command")
-        .unwrap()
-        .map(|x| x.as_os_str())
-        .collect::<Vec<_>>();
-
-    spawn(&SpawnOptions {
-        args: &args[..],
-        in_path: matches.get_one::<PathBuf>("in_path").map(|x| x.as_path()),
-        out_path: matches.get_one::<PathBuf>("out_path").map(|x| x.as_path()),
-        truncate_out: matches.get_flag("truncate_out"),
-        script_mode: matches.get_flag("script_mode"),
-        no_flush: matches.get_flag("no_flush"),
-        no_echo: matches.get_flag("no_echo"),
-        no_pager: matches.get_flag("no_pager"),
-        no_raw: matches.get_flag("no_raw"),
-    })
 }

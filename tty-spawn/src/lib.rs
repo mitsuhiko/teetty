@@ -2,34 +2,28 @@ use std::env;
 use std::ffi::{CString, OsStr};
 use std::fs::File;
 use std::io::Write;
-use std::os::unix::prelude::{AsRawFd, OpenOptionsExt, OsStrExt};
-use std::path::Path;
+use std::os::unix::prelude::{AsRawFd, OsStrExt};
 
-use anyhow::Error;
 use nix::errno::Errno;
 use nix::libc::{
-    login_tty, O_NONBLOCK, SIGWINCH, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, TIOCGWINSZ,
-    TIOCSWINSZ, VEOF,
+    login_tty, SIGWINCH, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, TIOCGWINSZ, TIOCSWINSZ, VEOF,
 };
 use nix::pty::{openpty, Winsize};
 use nix::sys::select::{select, FdSet};
 use nix::sys::signal::{killpg, Signal};
-use nix::sys::stat::Mode;
 use nix::sys::termios::{
     cfmakeraw, tcgetattr, tcsetattr, LocalFlags, OutputFlags, SetArg, Termios,
 };
 use nix::sys::time::TimeVal;
 use nix::sys::wait::{waitpid, WaitStatus};
-use nix::unistd::{
-    close, dup2, execvp, fork, isatty, mkfifo, read, tcgetpgrp, write, ForkResult, Pid,
-};
+use nix::unistd::{close, dup2, execvp, fork, isatty, read, tcgetpgrp, write, ForkResult, Pid};
 use signal_hook::iterator::Signals;
 
+/// Controls how the process spawns.
 pub struct SpawnOptions<'a> {
-    pub args: &'a [&'a OsStr],
-    pub in_path: Option<&'a Path>,
-    pub out_path: Option<&'a Path>,
-    pub truncate_out: bool,
+    pub command: &'a [&'a OsStr],
+    pub in_file: Option<File>,
+    pub out_file: Option<File>,
     pub script_mode: bool,
     pub no_flush: bool,
     pub no_echo: bool,
@@ -43,7 +37,7 @@ pub struct SpawnOptions<'a> {
 /// It leaves stdin/stdout/stderr connected but also writes events into the
 /// optional `out` log file.  Additionally it can retrieve instructions from
 /// the given control socket.
-pub fn spawn(opts: &SpawnOptions) -> Result<i32, Error> {
+pub fn spawn(mut opts: SpawnOptions) -> Result<i32, Errno> {
     // if we can't retrieve the terminal atts we're not directly connected
     // to a pty in which case we won't do any of the terminal related
     // operations.
@@ -84,11 +78,6 @@ pub fn spawn(opts: &SpawnOptions) -> Result<i32, Error> {
         (None, None)
     };
 
-    // crate a fifo if stdin is pointed to a non existing file
-    if let Some(ref path) = opts.in_path {
-        mkfifo_atomic(&path)?;
-    }
-
     // set some flags after pty has been created.  There are cases where we
     // want to remove the ECHO flag so we don't see ^D and similar things in
     // the output.  Likewise in script mode we want to remove OPOST which will
@@ -114,36 +103,12 @@ pub fn spawn(opts: &SpawnOptions) -> Result<i32, Error> {
         if term_attrs.is_some() {
             sigwinch_passthrough(pty.master, stderr_pty.as_ref().map(|x| x.master))?;
         }
-        let mut out_file = match opts.out_path {
-            Some(p) => Some(
-                if !opts.truncate_out {
-                    File::options().append(true).create(true).open(p)
-                } else {
-                    File::options()
-                        .create(true)
-                        .truncate(true)
-                        .write(true)
-                        .open(p)
-                }
-                .unwrap(),
-            ),
-            None => None,
-        };
-        let mut in_file = match opts.in_path {
-            Some(p) => Some(
-                File::options()
-                    .read(true)
-                    .custom_flags(O_NONBLOCK)
-                    .open(p)?,
-            ),
-            None => None,
-        };
         return Ok(communication_loop(
             pty.master,
             child,
             term_attrs.is_some(),
-            out_file.as_mut(),
-            in_file.as_mut(),
+            opts.out_file.as_mut(),
+            opts.in_file.as_mut(),
             stderr_pty.as_ref().map(|x| x.master),
             !opts.no_flush,
         )?);
@@ -158,7 +123,7 @@ pub fn spawn(opts: &SpawnOptions) -> Result<i32, Error> {
     // target executable after having set up the tty with `login_tty` which
     // rebinds stdin/stdout/stderr to the pty.
     let args = opts
-        .args
+        .command
         .iter()
         .filter_map(|x| CString::new(x.as_bytes()).ok())
         .collect::<Vec<_>>();
@@ -206,7 +171,7 @@ fn communication_loop(
     mut in_file: Option<&mut File>,
     stderr: Option<i32>,
     flush: bool,
-) -> Result<i32, Error> {
+) -> Result<i32, Errno> {
     let mut buf = [0; 4096];
     let mut read_stdin = true;
     let mut done = false;
@@ -301,11 +266,14 @@ fn forward_and_log(
     out_file: &mut Option<&mut File>,
     buf: &[u8],
     flush: bool,
-) -> Result<(), Error> {
+) -> Result<(), Errno> {
     if let Some(logfile) = out_file {
-        logfile.write_all(buf)?;
+        logfile.write_all(buf).map_err(|x| match x.raw_os_error() {
+            Some(errno) => Errno::from_i32(errno),
+            None => Errno::EINVAL,
+        })?;
         if flush {
-            logfile.flush()?;
+            logfile.flush().ok();
         }
     }
     write_all(fd, buf)?;
@@ -325,14 +293,6 @@ fn set_winsize(fd: i32, winsize: Winsize) -> Result<(), Errno> {
     nix::ioctl_write_ptr_bad!(_set_window_size, TIOCSWINSZ, Winsize);
     unsafe { _set_window_size(fd, &winsize) }?;
     Ok(())
-}
-
-/// Creates a FIFO at the path if the file does not exist yet.
-fn mkfifo_atomic(path: &Path) -> Result<(), Errno> {
-    match mkfifo(path, Mode::S_IRUSR | Mode::S_IWUSR) {
-        Ok(()) | Err(Errno::EEXIST) => Ok(()),
-        Err(err) => Err(err),
-    }
 }
 
 /// Sends an EOF signal to the terminal if it's in canonical mode.
