@@ -83,6 +83,16 @@ impl TtySpawn {
     ///
     /// It's recommended that this is a named pipe and as a general recommendation
     /// this file should be opened with `O_NONBLOCK`.
+    ///
+    /// # Platform Specifics
+    ///
+    /// While we will never write into the file it's strongly recommended to
+    /// ensure that the file is opened writable too.  The reason for this is that
+    /// on Linux, if the last writer (temporarily) disconnects from a FIFO polling
+    /// primitives such as the one used by `tty-spawn` will keep reporting that the
+    /// file is ready while there not actually being any more data coming in.  The
+    /// solution to this problem is to ensure that there is at least always one
+    /// writer open which can be ensured by also opening this file for writing.
     pub fn stdin_file(&mut self, f: File) -> &mut Self {
         self.options_mut().stdin_file = Some(f);
         self
@@ -92,9 +102,12 @@ impl TtySpawn {
     pub fn stdin_path<P: AsRef<Path>>(&mut self, path: P) -> Result<&mut Self, io::Error> {
         let path = path.as_ref();
         mkfifo_atomic(&path)?;
+        // for the justification for write(true) see the explanation on
+        // [`stdin_file`](Self::stdin_file).
         Ok(self.stdin_file(
             File::options()
                 .read(true)
+                .write(true)
                 .custom_flags(O_NONBLOCK)
                 .open(path)?,
         ))
