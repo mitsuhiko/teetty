@@ -1,3 +1,7 @@
+# 0.3.1
+
+- Fixed a bug that caused high CPU usage on Linux. #9
+
 # 0.3.0
 
 - Trim down dependencies to no longer use clap derives.
