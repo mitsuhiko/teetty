@@ -73,12 +73,12 @@ that want to move cursors around will function correctly.
 `--script-mode`.  In that mode stdout and stderr stay separated.  This is
 accomplished by leaving stdout connected to the pseudo terminal and by
 connecting stderr to a secondary internal pty.  Because this is a setup that
-execuables are not familiar with it causes all kinds of visual artifacts when
+executables are not familiar with it causes all kinds of visual artifacts when
 raw mode is enabled.  To combat this, in this mode pagers and raw mode are
 automatically disabled.
 
-**Note on stream synchronization:** unfortunately stdout/stderr currently are not
-propertly synchronized in script mode.  See [#6](https://github.com/mitsuhiko/teetty/issues/6)
+**Note on stream synchronization:** Unfortunately stdout/stderr currently are not
+properly synchronized in script mode.  See [#6](https://github.com/mitsuhiko/teetty/issues/6)
 for more information.
 
 ## FIFOs, Flushing and Control Characters
