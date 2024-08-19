@@ -388,7 +388,7 @@ fn communication_loop(
         if let Some(ref f) = in_file {
             if read_fds.contains(f.as_fd()) {
                 // use read() here so that we can handle EAGAIN/EINTR
-                // without this we might recieve resource temporary unavailable
+                // without this we might receive resource temporary unavailable
                 // see https://github.com/mitsuhiko/teetty/issues/3
                 match read(f.as_raw_fd(), &mut buf) {
                     Ok(0) | Err(Errno::EAGAIN | Errno::EINTR) => {}
