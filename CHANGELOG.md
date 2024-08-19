@@ -1,6 +1,7 @@
 # 0.4.0
 
 - Update to a newer nix version with IO safety. #14
+- Build and publish binaries.
 
 # 0.3.1
 

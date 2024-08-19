@@ -1,6 +1,5 @@
 # teetty
 
-[![Build Status](https://github.com/mitsuhiko/teetty/workflows/Tests/badge.svg?branch=main)](https://github.com/mitsuhiko/teetty/actions?query=workflow%3ATests)
 [![Crates.io](https://img.shields.io/crates/d/teetty.svg)](https://crates.io/crates/teetty)
 [![License](https://img.shields.io/github/license/mitsuhiko/teetty)](https://github.com/mitsuhiko/teetty/blob/main/LICENSE)
 [![rustc 1.63.0](https://img.shields.io/badge/rust-1.63%2B-orange.svg)](https://img.shields.io/badge/rust-1.63%2B-orange.svg)
