@@ -5,7 +5,7 @@
 use std::ffi::{CString, OsStr, OsString};
 use std::fs::File;
 use std::io::Write;
-use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
+use std::os::fd::{AsFd, BorrowedFd, IntoRawFd, OwnedFd};
 use std::os::unix::prelude::{AsRawFd, OpenOptionsExt, OsStrExt};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -275,13 +275,14 @@ fn spawn(mut opts: SpawnOptions) -> Result<i32, Errno> {
     // has to merge stdout/stderr since the pseudo terminal only has one stream for
     // both.
     if let ForkResult::Parent { child } = unsafe { fork()? } {
+        let (master, stderr_pty) = { (pty.master, stderr_pty.map(|x| x.master)) };
         return communication_loop(
-            pty.master,
+            master,
             child,
             term_attrs.is_some(),
             opts.stdout_file.as_mut(),
             opts.stdin_file.as_mut(),
-            stderr_pty.map(|x| x.master),
+            stderr_pty,
             !opts.no_flush,
         );
     }
@@ -301,10 +302,17 @@ fn spawn(mut opts: SpawnOptions) -> Result<i32, Errno> {
         .iter()
         .filter_map(|x| CString::new(x.as_bytes()).ok())
         .collect::<Vec<_>>();
+
+    let (tty_fd, stderr_fd) = {
+        (
+            pty.slave.into_raw_fd(),
+            stderr_pty.map(|x| x.slave.into_raw_fd()),
+        )
+    };
     unsafe {
-        login_tty(pty.slave.as_raw_fd());
-        if let Some(ref stderr_pty) = stderr_pty {
-            dup2(stderr_pty.slave.as_raw_fd(), io::stderr().as_raw_fd())?;
+        login_tty(tty_fd);
+        if let Some(stderr_fd) = stderr_fd {
+            dup2(stderr_fd, io::stderr().as_raw_fd())?;
         }
     }
 
