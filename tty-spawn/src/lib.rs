@@ -98,7 +98,7 @@ impl TtySpawn {
     /// Sets a path as input file for stdin.
     pub fn stdin_path<P: AsRef<Path>>(&mut self, path: P) -> Result<&mut Self, io::Error> {
         let path = path.as_ref();
-        mkfifo_atomic(&path)?;
+        mkfifo_atomic(path)?;
         // for the justification for write(true) see the explanation on
         // [`stdin_file`](Self::stdin_file).
         Ok(self.stdin_file(
@@ -275,7 +275,7 @@ fn spawn(mut opts: SpawnOptions) -> Result<i32, Errno> {
     // has to merge stdout/stderr since the pseudo terminal only has one stream for
     // both.
     if let ForkResult::Parent { child } = unsafe { fork()? } {
-        return Ok(communication_loop(
+        return communication_loop(
             pty.master,
             child,
             term_attrs.is_some(),
@@ -283,7 +283,7 @@ fn spawn(mut opts: SpawnOptions) -> Result<i32, Errno> {
             opts.stdin_file.as_mut(),
             stderr_pty.map(|x| x.master),
             !opts.no_flush,
-        )?);
+        );
     }
 
     // set the pagers to `cat` if it's disabled.
@@ -356,7 +356,7 @@ fn communication_loop(
         match select(None, Some(&mut read_fds), None, None, Some(&mut timeout)) {
             Ok(0) | Err(Errno::EINTR | Errno::EAGAIN) => continue,
             Ok(_) => {}
-            Err(err) => return Err(err.into()),
+            Err(err) => return Err(err),
         }
 
         if read_fds.contains(stdin.as_fd()) {
@@ -373,7 +373,7 @@ fn communication_loop(
                 Err(Errno::EIO) => {
                     done = true;
                 }
-                Err(err) => return Err(err.into()),
+                Err(err) => return Err(err),
             };
         }
         if let Some(ref f) = in_file {
@@ -383,7 +383,7 @@ fn communication_loop(
                 // see https://github.com/mitsuhiko/teetty/issues/3
                 match read(f.as_raw_fd(), &mut buf) {
                     Ok(0) | Err(Errno::EAGAIN | Errno::EINTR) => {}
-                    Err(err) => return Err(err.into()),
+                    Err(err) => return Err(err),
                     Ok(n) => {
                         write_all(master.as_fd(), &buf[..n])?;
                     }
@@ -408,7 +408,7 @@ fn communication_loop(
                 }
                 Ok(n) => forward_and_log(io::stdout().as_fd(), &mut out_file, &buf[..n], flush)?,
                 Err(Errno::EAGAIN | Errno::EINTR) => {}
-                Err(err) => return Err(err.into()),
+                Err(err) => return Err(err),
             };
         }
     }

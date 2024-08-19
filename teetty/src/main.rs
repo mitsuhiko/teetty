@@ -24,7 +24,7 @@ fn execute() -> Result<i32, Error> {
     spawn.raw(!matches.get_flag("no_raw"));
 
     if let Some(p) = matches.get_one::<PathBuf>("in_path") {
-        spawn.stdin_path(&p)?;
+        spawn.stdin_path(p)?;
     }
     if let Some(p) = matches.get_one::<PathBuf>("out_path") {
         spawn.stdout_path(p, matches.get_flag("truncate_out"))?;
