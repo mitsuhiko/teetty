@@ -186,7 +186,7 @@ checksum = "420acb44afdae038210c99e69aae24109f32f15500aa708e81d46c9f29d55fcf"
 
 [[package]]
 name = "teetty"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -220,7 +220,7 @@ dependencies = [
 
 [[package]]
 name = "tty-spawn"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "nix",

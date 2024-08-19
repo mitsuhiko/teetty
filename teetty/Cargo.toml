@@ -4,7 +4,7 @@ license = "Apache-2.0"
 authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
 description = " A bit like tee, a bit like script, but all with a fake tty. Lets you remote control and watch a process."
 repository = "https://github.com/mitsuhiko/teetty"
-version = "0.3.1"
+version = "0.4.0"
 rust-version = "1.63.0"
 edition = "2021"
 keywords = ["pty", "script", "tty", "tee"]
@@ -15,7 +15,7 @@ exclude = [
 
 [dependencies]
 anyhow = "1.0.68"
-tty-spawn = { version = "=0.3.1", path = "../tty-spawn" }
+tty-spawn = { version = "=0.4.0", path = "../tty-spawn" }
 clap = { version = "4.5.0", default-features = false, features = ["std", "help", "wrap_help", "error-context"] }
 
 [dev-dependencies]
