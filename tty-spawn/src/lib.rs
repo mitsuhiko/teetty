@@ -275,9 +275,15 @@ fn spawn(mut opts: SpawnOptions) -> Result<i32, Errno> {
     // has to merge stdout/stderr since the pseudo terminal only has one stream for
     // both.
     if let ForkResult::Parent { child } = unsafe { fork()? } {
-        let (master, stderr_pty) = { (pty.master, stderr_pty.map(|x| x.master)) };
+        drop(pty.slave);
+        let stderr_pty = if let Some(stderr_pty) = stderr_pty {
+            drop(stderr_pty.slave);
+            Some(stderr_pty.master)
+        } else {
+            None
+        };
         return communication_loop(
-            master,
+            pty.master,
             child,
             term_attrs.is_some(),
             opts.stdout_file.as_mut(),
@@ -303,16 +309,11 @@ fn spawn(mut opts: SpawnOptions) -> Result<i32, Errno> {
         .filter_map(|x| CString::new(x.as_bytes()).ok())
         .collect::<Vec<_>>();
 
-    let (tty_fd, stderr_fd) = {
-        (
-            pty.slave.into_raw_fd(),
-            stderr_pty.map(|x| x.slave.into_raw_fd()),
-        )
-    };
+    drop(pty.master);
     unsafe {
-        login_tty(tty_fd);
-        if let Some(stderr_fd) = stderr_fd {
-            dup2(stderr_fd, io::stderr().as_raw_fd())?;
+        login_tty(pty.slave.into_raw_fd());
+        if let Some(stderr_pty) = stderr_pty {
+            dup2(stderr_pty.slave.into_raw_fd(), io::stderr().as_raw_fd())?;
         }
     }
 
