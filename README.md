@@ -18,13 +18,13 @@ keyboard is still attached.  The underlying functionality is available in the
 You can install pre-built binaries using the following script:
 
 ```bash
-$ curl -LsSf https://github.com/mitsuhiko/teetty/releases/latest/download/teetty-installer.sh | sh
+curl -LsSf https://github.com/mitsuhiko/teetty/releases/latest/download/teetty-installer.sh | sh
 ```
 
 Alternatively you can build it yourself with cargo:
 
 ```bash
-$ cargo install teetty
+cargo install teetty
 ```
 
 ![](https://raw.githubusercontent.com/mitsuhiko/teetty/main/assets/demo.gif)
