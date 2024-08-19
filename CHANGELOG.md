@@ -1,3 +1,7 @@
+# 0.4.0
+
+- Update to a newer nix version with IO safety. #14
+
 # 0.3.1
 
 - Fixed a bug that caused high CPU usage on Linux. #9
