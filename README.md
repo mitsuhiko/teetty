@@ -15,6 +15,14 @@ file and it also lets you send input remotely into the program while the user's
 keyboard is still attached.  The underlying functionality is available in the
 [`tty-spawn`](https://github.com/mitsuhiko/teetty/tree/main/tty-spawn) crate.
 
+You can install pre-built binaries using the following script:
+
+```bash
+$ curl -LsSf https://github.com/mitsuhiko/teetty/releases/latest/download/teetty-installer.sh | sh
+```
+
+Alternatively you can build it yourself with cargo:
+
 ```bash
 $ cargo install teetty
 ```
