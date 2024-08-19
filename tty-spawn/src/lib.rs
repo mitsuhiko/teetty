@@ -5,6 +5,7 @@
 use std::ffi::{CString, OsStr, OsString};
 use std::fs::File;
 use std::io::Write;
+use std::os::fd::{AsFd, BorrowedFd, IntoRawFd, OwnedFd};
 use std::os::unix::prelude::{AsRawFd, OpenOptionsExt, OsStrExt};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -12,9 +13,7 @@ use std::sync::Arc;
 use std::{env, io};
 
 use nix::errno::Errno;
-use nix::libc::{
-    login_tty, O_NONBLOCK, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, TIOCGWINSZ, TIOCSWINSZ, VEOF,
-};
+use nix::libc::{login_tty, O_NONBLOCK, TIOCGWINSZ, TIOCSWINSZ, VEOF};
 use nix::pty::{openpty, Winsize};
 use nix::sys::select::{select, FdSet};
 use nix::sys::signal::{killpg, Signal};
@@ -24,9 +23,7 @@ use nix::sys::termios::{
 };
 use nix::sys::time::TimeVal;
 use nix::sys::wait::{waitpid, WaitStatus};
-use nix::unistd::{
-    close, dup2, execvp, fork, isatty, mkfifo, read, tcgetpgrp, write, ForkResult, Pid,
-};
+use nix::unistd::{dup2, execvp, fork, isatty, mkfifo, read, tcgetpgrp, write, ForkResult, Pid};
 use signal_hook::consts::SIGWINCH;
 
 /// Lets you spawn processes with a TTY connected.
@@ -101,7 +98,7 @@ impl TtySpawn {
     /// Sets a path as input file for stdin.
     pub fn stdin_path<P: AsRef<Path>>(&mut self, path: P) -> Result<&mut Self, io::Error> {
         let path = path.as_ref();
-        mkfifo_atomic(&path)?;
+        mkfifo_atomic(path)?;
         // for the justification for write(true) see the explanation on
         // [`stdin_file`](Self::stdin_file).
         Ok(self.stdin_file(
@@ -219,8 +216,10 @@ fn spawn(mut opts: SpawnOptions) -> Result<i32, Errno> {
     // if we can't retrieve the terminal atts we're not directly connected
     // to a pty in which case we won't do any of the terminal related
     // operations.
-    let term_attrs = tcgetattr(STDIN_FILENO).ok();
-    let winsize = term_attrs.as_ref().and_then(|_| get_winsize(STDIN_FILENO));
+    let term_attrs = tcgetattr(io::stdin()).ok();
+    let winsize = term_attrs
+        .as_ref()
+        .and_then(|_| get_winsize(io::stdin().as_fd()));
 
     // Create the outer pty for stdout
     let pty = openpty(&winsize, &term_attrs)?;
@@ -229,8 +228,10 @@ fn spawn(mut opts: SpawnOptions) -> Result<i32, Errno> {
     // here but in that case the `isatty()` call on stderr would report that
     // it's not connected to a tty which is what we want to prevent.
     let (_restore_term, stderr_pty) = if opts.script_mode {
-        let term_attrs = tcgetattr(STDERR_FILENO).ok();
-        let winsize = term_attrs.as_ref().and_then(|_| get_winsize(STDERR_FILENO));
+        let term_attrs = tcgetattr(io::stderr()).ok();
+        let winsize = term_attrs
+            .as_ref()
+            .and_then(|_| get_winsize(io::stderr().as_fd()));
         let stderr_pty = openpty(&winsize, &term_attrs)?;
         (None, Some(stderr_pty))
 
@@ -245,7 +246,7 @@ fn spawn(mut opts: SpawnOptions) -> Result<i32, Errno> {
                 let mut raw_attrs = term_attrs.clone();
                 cfmakeraw(&mut raw_attrs);
                 raw_attrs.local_flags.remove(LocalFlags::ECHO);
-                tcsetattr(STDIN_FILENO, SetArg::TCSAFLUSH, &raw_attrs).ok();
+                tcsetattr(io::stdin(), SetArg::TCSAFLUSH, &raw_attrs).ok();
                 RestoreTerm(term_attrs.clone())
             }),
             None,
@@ -260,38 +261,43 @@ fn spawn(mut opts: SpawnOptions) -> Result<i32, Errno> {
     // want to remove the ECHO flag so we don't see ^D and similar things in
     // the output.  Likewise in script mode we want to remove OPOST which will
     // otherwise convert LF to CRLF.
-    if let Ok(mut term_attrs) = tcgetattr(pty.master) {
+    if let Ok(mut term_attrs) = tcgetattr(&pty.master) {
         if opts.script_mode {
             term_attrs.output_flags.remove(OutputFlags::OPOST);
         }
-        if opts.no_echo || (opts.script_mode && !isatty(STDIN_FILENO).unwrap_or(false)) {
+        if opts.no_echo || (opts.script_mode && !isatty(io::stdin().as_raw_fd()).unwrap_or(false)) {
             term_attrs.local_flags.remove(LocalFlags::ECHO);
         }
-        tcsetattr(pty.master, SetArg::TCSAFLUSH, &term_attrs).ok();
+        tcsetattr(&pty.master, SetArg::TCSAFLUSH, &term_attrs).ok();
     }
 
     // Fork and establish the communication loop in the parent.  This unfortunately
     // has to merge stdout/stderr since the pseudo terminal only has one stream for
     // both.
     if let ForkResult::Parent { child } = unsafe { fork()? } {
-        close(pty.slave)?;
-        if let Some(ref stderr_pty) = stderr_pty {
-            close(stderr_pty.slave)?;
-        }
-        return Ok(communication_loop(
+        drop(pty.slave);
+        let stderr_pty = if let Some(stderr_pty) = stderr_pty {
+            drop(stderr_pty.slave);
+            Some(stderr_pty.master)
+        } else {
+            None
+        };
+        return communication_loop(
             pty.master,
             child,
             term_attrs.is_some(),
             opts.stdout_file.as_mut(),
             opts.stdin_file.as_mut(),
-            stderr_pty.as_ref().map(|x| x.master),
+            stderr_pty,
             !opts.no_flush,
-        )?);
+        );
     }
 
     // set the pagers to `cat` if it's disabled.
     if opts.no_pager || opts.script_mode {
-        env::set_var("PAGER", "cat");
+        unsafe {
+            env::set_var("PAGER", "cat");
+        }
     }
 
     // If we reach this point we're the child and we want to turn into the
@@ -302,14 +308,12 @@ fn spawn(mut opts: SpawnOptions) -> Result<i32, Errno> {
         .iter()
         .filter_map(|x| CString::new(x.as_bytes()).ok())
         .collect::<Vec<_>>();
-    close(pty.master)?;
-    if let Some(ref stderr_pty) = stderr_pty {
-        close(stderr_pty.master)?;
-    }
+
+    drop(pty.master);
     unsafe {
-        login_tty(pty.slave);
-        if let Some(ref stderr_pty) = stderr_pty {
-            dup2(stderr_pty.slave, STDERR_FILENO)?;
+        login_tty(pty.slave.into_raw_fd());
+        if let Some(stderr_pty) = stderr_pty {
+            dup2(stderr_pty.slave.into_raw_fd(), io::stderr().as_raw_fd())?;
         }
     }
 
@@ -319,17 +323,18 @@ fn spawn(mut opts: SpawnOptions) -> Result<i32, Errno> {
 }
 
 fn communication_loop(
-    master: i32,
+    master: OwnedFd,
     child: Pid,
     is_tty: bool,
     mut out_file: Option<&mut File>,
-    mut in_file: Option<&mut File>,
-    stderr: Option<i32>,
+    in_file: Option<&mut File>,
+    stderr: Option<OwnedFd>,
     flush: bool,
 ) -> Result<i32, Errno> {
     let mut buf = [0; 4096];
     let mut read_stdin = true;
     let mut done = false;
+    let stdin = io::stdin();
 
     let got_winch = Arc::new(AtomicBool::new(false));
     if is_tty {
@@ -338,103 +343,101 @@ fn communication_loop(
 
     while !done {
         if got_winch.load(Ordering::Relaxed) {
-            forward_winsize(master, stderr)?;
+            forward_winsize(master.as_fd(), stderr.as_ref().map(|x| x.as_fd()))?;
             got_winch.store(false, Ordering::Relaxed);
         }
 
         let mut read_fds = FdSet::new();
         let mut timeout = TimeVal::new(1, 0);
-        read_fds.insert(master);
+        read_fds.insert(master.as_fd());
         if !read_stdin && is_tty {
             read_stdin = true;
         }
         if read_stdin {
-            read_fds.insert(STDIN_FILENO);
+            read_fds.insert(stdin.as_fd());
         }
         if let Some(ref f) = in_file {
-            read_fds.insert(f.as_raw_fd());
+            read_fds.insert(f.as_fd());
         }
-        if let Some(fd) = stderr {
-            read_fds.insert(fd);
+        if let Some(ref fd) = stderr {
+            read_fds.insert(fd.as_fd());
         }
         match select(None, Some(&mut read_fds), None, None, Some(&mut timeout)) {
             Ok(0) | Err(Errno::EINTR | Errno::EAGAIN) => continue,
             Ok(_) => {}
-            Err(err) => return Err(err.into()),
+            Err(err) => return Err(err),
         }
 
-        if read_fds.contains(STDIN_FILENO) {
-            match read(STDIN_FILENO, &mut buf) {
+        if read_fds.contains(stdin.as_fd()) {
+            match read(stdin.as_raw_fd(), &mut buf) {
                 Ok(0) => {
-                    send_eof_sequence(master);
+                    send_eof_sequence(master.as_fd());
                     read_stdin = false;
                 }
                 Ok(n) => {
-                    write_all(master, &buf[..n])?;
+                    write_all(master.as_fd(), &buf[..n])?;
                 }
                 Err(Errno::EINTR | Errno::EAGAIN) => {}
                 // on linux a closed tty raises EIO
                 Err(Errno::EIO) => {
                     done = true;
                 }
-                Err(err) => return Err(err.into()),
+                Err(err) => return Err(err),
             };
         }
-        if let Some(ref mut f) = in_file {
-            if read_fds.contains(f.as_raw_fd()) {
+        if let Some(ref f) = in_file {
+            if read_fds.contains(f.as_fd()) {
                 // use read() here so that we can handle EAGAIN/EINTR
                 // without this we might recieve resource temporary unavailable
                 // see https://github.com/mitsuhiko/teetty/issues/3
                 match read(f.as_raw_fd(), &mut buf) {
                     Ok(0) | Err(Errno::EAGAIN | Errno::EINTR) => {}
-                    Err(err) => return Err(err.into()),
+                    Err(err) => return Err(err),
                     Ok(n) => {
-                        write_all(master, &buf[..n])?;
+                        write_all(master.as_fd(), &buf[..n])?;
                     }
                 }
             }
         }
-        if let Some(fd) = stderr {
-            if read_fds.contains(fd) {
-                match read(fd, &mut buf) {
+        if let Some(ref fd) = stderr {
+            if read_fds.contains(fd.as_fd()) {
+                match read(fd.as_raw_fd(), &mut buf) {
                     Ok(0) | Err(_) => {}
                     Ok(n) => {
-                        forward_and_log(STDERR_FILENO, &mut out_file, &buf[..n], flush)?;
+                        forward_and_log(io::stderr().as_fd(), &mut out_file, &buf[..n], flush)?;
                     }
                 }
             }
         }
-        if read_fds.contains(master) {
-            match read(master, &mut buf) {
+        if read_fds.contains(master.as_fd()) {
+            match read(master.as_raw_fd(), &mut buf) {
                 // on linux a closed tty raises EIO
                 Ok(0) | Err(Errno::EIO) => {
                     done = true;
                 }
-                Ok(n) => forward_and_log(STDOUT_FILENO, &mut out_file, &buf[..n], flush)?,
+                Ok(n) => forward_and_log(io::stdout().as_fd(), &mut out_file, &buf[..n], flush)?,
                 Err(Errno::EAGAIN | Errno::EINTR) => {}
-                Err(err) => return Err(err.into()),
+                Err(err) => return Err(err),
             };
         }
     }
 
-    let code = match waitpid(child, None)? {
+    Ok(match waitpid(child, None)? {
         WaitStatus::Exited(_, status) => status,
         WaitStatus::Signaled(_, signal, _) => 128 + signal as i32,
         _ => 1,
-    };
-    close(master)?;
-    Ok(code)
+    })
 }
 
 fn forward_and_log(
-    fd: i32,
+    fd: BorrowedFd,
     out_file: &mut Option<&mut File>,
     buf: &[u8],
     flush: bool,
 ) -> Result<(), Errno> {
     if let Some(logfile) = out_file {
         logfile.write_all(buf).map_err(|x| match x.raw_os_error() {
-            Some(errno) => Errno::from_i32(errno),
+            Some(errno) => Errno::from_raw(errno),
             None => Errno::EINVAL,
         })?;
         if flush {
@@ -446,8 +449,8 @@ fn forward_and_log(
 }
 
 /// Forwards the winsize and emits SIGWINCH
-fn forward_winsize(master: i32, stderr_master: Option<i32>) -> Result<(), Errno> {
-    if let Some(winsize) = get_winsize(STDIN_FILENO) {
+fn forward_winsize(master: BorrowedFd, stderr_master: Option<BorrowedFd>) -> Result<(), Errno> {
+    if let Some(winsize) = get_winsize(io::stdin().as_fd()) {
         set_winsize(master, winsize).ok();
         if let Some(second_master) = stderr_master {
             set_winsize(second_master, winsize).ok();
@@ -460,22 +463,22 @@ fn forward_winsize(master: i32, stderr_master: Option<i32>) -> Result<(), Errno>
 }
 
 /// If possible, returns the terminal size of the given fd.
-fn get_winsize(fd: i32) -> Option<Winsize> {
+fn get_winsize(fd: BorrowedFd) -> Option<Winsize> {
     nix::ioctl_read_bad!(_get_window_size, TIOCGWINSZ, Winsize);
     let mut size: Winsize = unsafe { std::mem::zeroed() };
-    unsafe { _get_window_size(fd, &mut size).ok()? };
+    unsafe { _get_window_size(fd.as_raw_fd(), &mut size).ok()? };
     Some(size)
 }
 
 /// Sets the winsize
-fn set_winsize(fd: i32, winsize: Winsize) -> Result<(), Errno> {
+fn set_winsize(fd: BorrowedFd, winsize: Winsize) -> Result<(), Errno> {
     nix::ioctl_write_ptr_bad!(_set_window_size, TIOCSWINSZ, Winsize);
-    unsafe { _set_window_size(fd, &winsize) }?;
+    unsafe { _set_window_size(fd.as_raw_fd(), &winsize) }?;
     Ok(())
 }
 
 /// Sends an EOF signal to the terminal if it's in canonical mode.
-fn send_eof_sequence(fd: i32) {
+fn send_eof_sequence(fd: BorrowedFd) {
     if let Ok(attrs) = tcgetattr(fd) {
         if attrs.local_flags.contains(LocalFlags::ICANON) {
             write(fd, &[attrs.control_chars[VEOF]]).ok();
@@ -484,7 +487,7 @@ fn send_eof_sequence(fd: i32) {
 }
 
 /// Calls write in a loop until it's done.
-fn write_all(fd: i32, mut buf: &[u8]) -> Result<(), Errno> {
+fn write_all(fd: BorrowedFd, mut buf: &[u8]) -> Result<(), Errno> {
     while !buf.is_empty() {
         // we generally assume that EINTR/EAGAIN can't happen on write()
         let n = write(fd, buf)?;
@@ -505,6 +508,6 @@ struct RestoreTerm(Termios);
 
 impl Drop for RestoreTerm {
     fn drop(&mut self) {
-        tcsetattr(STDIN_FILENO, SetArg::TCSAFLUSH, &self.0).ok();
+        tcsetattr(io::stdin(), SetArg::TCSAFLUSH, &self.0).ok();
     }
 }

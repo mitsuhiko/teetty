@@ -5,7 +5,7 @@ authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
 description = " A bit like tee, a bit like script, but all with a fake tty. Lets you remote control and watch a process."
 repository = "https://github.com/mitsuhiko/teetty"
 version = "0.3.1"
-rust-version = "1.60.0"
+rust-version = "1.63.0"
 edition = "2021"
 keywords = ["pty", "script", "tty", "tee"]
 readme = "README.md"
@@ -19,5 +19,5 @@ tty-spawn = { version = "=0.3.1", path = "../tty-spawn" }
 clap = { version = "4.0.30", default-features = false, features = ["std", "help", "wrap_help", "error-context"] }
 
 [dev-dependencies]
-insta = "1.23.0"
-tempfile = "3.3.0"
+insta = "1.39.0"
+tempfile = "3.10.0"
