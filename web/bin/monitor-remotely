@@ -1,0 +1,4 @@
+#!/bin/sh
+rm -f /tmp/teetty-stdout
+rm -f /tmp/teetty-stdin
+teetty -o /tmp/teetty-stdout -i /tmp/teetty-stdin -- "$@" 

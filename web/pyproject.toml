@@ -1,0 +1,29 @@
+[project]
+name = "web"
+version = "0.1.0"
+description = "Add your description here"
+authors = [
+    { name = "Armin Ronacher", email = "armin.ronacher@active-4.com" }
+]
+dependencies = [
+    "flask>=3.0.3",
+]
+readme = "README.md"
+requires-python = ">= 3.12"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.rye]
+managed = true
+dev-dependencies = []
+
+[tool.rye.scripts]
+serve = { env = { "FLASK_APP" = "web:app", "FLASK_DEBUG" = "1" }, cmd = "flask run" }
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/web"]

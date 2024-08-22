@@ -1,0 +1,45 @@
+<!doctype html>
+<link rel="stylesheet" type="text/css" href="static/asciinema-player.css">
+<script src="static/asciinema-player.min.js"></script>
+<style>
+  #term {
+    width: 800px;
+  }
+  .actions {
+    margin: 10px 0;
+  }
+  #input {
+    width: 600px;
+  }
+</style>
+<div id=term></div>
+<div class=actions>
+  <form>
+    <input type=text id=input>
+    <input type=submit id=submit value="Send">
+  </form>
+</div>
+<script>
+  AsciinemaPlayer.create({
+    driver: 'eventsource',
+    url: '/stream',
+  }, document.getElementById('term'), {
+    logger: console,
+    autoPlay: true
+  });
+
+  document.forms[0].onsubmit = (e) => {
+    e.preventDefault();
+    let text = document.forms[0][0].value;
+    document.forms[0][0].value = "";
+    fetch("/input", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        "input": text
+      })
+    })
+  };
+</script>
