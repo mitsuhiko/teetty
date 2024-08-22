@@ -40,7 +40,6 @@ def stream():
             "timestamp": int(time.time()),
             "env": {"TERM": "dummy"}
         })).encode("utf-8")
-        buf = []
         now = time.time()
         while True:
             line = child.stdout.raw.read(8000)
